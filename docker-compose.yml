@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: social_connect_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: socialuser
+      POSTGRES_PASSWORD: socialpassword
+      POSTGRES_DB: socialconnect
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

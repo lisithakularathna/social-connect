@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+**/node_modules/
+package-lock.json
+package.json
+
+# Environment variables
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.idea/
+**/.idea/
+.vscode/
+**/.vscode/
+
+# Build artifacts
+dist/
+**/dist/
+build/
+**/build/
+*.log
+**/*.log
+
+# Flutter specific
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/local.properties
