@@ -27,6 +27,18 @@ build/
 **/build/
 *.log
 **/*.log
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# AI & Agent metadata
+.agents/
+**/.agents/
+.claude/
+**/.claude/
+.cursor/
+**/.cursor/
+.devin/
+**/.devin/
 
 # Flutter specific
 **/.dart_tool/
