@@ -1,0 +1,79 @@
+// use prisma-next
+
+model User {
+  id              Int      @id @default(autoincrement())
+  email           String   @unique
+  password        String
+  username        String?
+  name            String?
+  bio             String?
+  profileImageUrl String?
+
+  posts           Post[]
+  likes           PostLike[]
+  comments        Comment[]
+
+  following       Follow[] @relation("follower")
+  followers       Follow[] @relation("following")
+
+  notifications   Notification[]
+
+  createdAt       TimestamptzString @default(now())
+  updatedAt       temporal.updatedAtString()
+}
+
+model Post {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String?
+  imageUrl  String?
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  Int
+  likes     PostLike[]
+  comments  Comment[]
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+}
+
+model PostLike {
+  id        Int      @id @default(autoincrement())
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt TimestamptzString @default(now())
+
+  @@unique([postId, userId])
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  createdAt TimestamptzString @default(now())
+  updatedAt temporal.updatedAtString()
+}
+
+model Follow {
+  id          Int  @id @default(autoincrement())
+  follower    User @relation("follower", fields: [followerId], references: [id])
+  followerId  Int
+  following   User @relation("following", fields: [followingId], references: [id])
+  followingId Int
+  createdAt   TimestamptzString @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  type      String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt TimestamptzString @default(now())
+}
