@@ -40,46 +40,76 @@ export class PostsService {
     };
   }
 
-  async getAllPosts(currentUserId?: number) {
-    const posts = await db.orm.public.Post
-      .include('author')
-      .all();
+  async getAllPosts(
+    currentUserId?: number,
+    page?: number,
+    limit?: number,
+  ) {
+    const safePage =
+      Number.isFinite(page) && (page as number) > 0
+        ? Math.floor(page as number)
+        : 1;
 
-    const allLikes = await db.orm.public.PostLike.all();
-    const allComments = await db.orm.public.Comment.all();
+    // Cap the page size so a caller can't force the server to load the
+    // entire feed in one request.
+    const safeLimit =
+      Number.isFinite(limit) && (limit as number) > 0
+        ? Math.min(Math.floor(limit as number), 50)
+        : 10;
 
-    return posts
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() -
-          new Date(a.createdAt).getTime(),
-      )
-      .map((post) => {
-        const postLikes = allLikes.filter((l) => l.postId === post.id);
-        const postComments = allComments.filter((c) => c.postId === post.id);
+    const offset = (safePage - 1) * safeLimit;
 
-        return {
-          id: post.id,
-          title: post.title,
-          content: post.content,
-          imageUrl: post.imageUrl,
-          authorId: post.authorId,
-          createdAt: post.createdAt,
-          updatedAt: post.updatedAt,
-          likesCount: postLikes.length,
-          isLiked: currentUserId
-            ? postLikes.some((l) => l.userId === currentUserId)
-            : false,
-          commentsCount: postComments.length,
-          author: {
-            id: post.author.id,
-            username: post.author.username,
-            name: post.author.name,
-            email: post.author.email,
-            profileImageUrl: post.author.profileImageUrl,
-          },
-        };
-      });
+    // A sentinel that can never match a real user id, so the "did I like
+    // this" branch below is always well-formed even for anonymous callers.
+    const likerId = currentUserId ?? 0;
+
+    const [posts, totalCount] = await Promise.all([
+      db.orm.public.Post
+        .include('author')
+        .include('likes', (likes) =>
+          likes.combine({
+            total: likes.count(),
+            byMe: likes.where((l) => l.userId.eq(likerId)).count(),
+          }),
+        )
+        .include('comments', (comments) => comments.count())
+        .orderBy([(p) => p.createdAt.desc(), (p) => p.id.desc()])
+        .limit(safeLimit)
+        .offset(offset)
+        .all(),
+      db.orm.public.Post.count(),
+    ]);
+
+    const totalCountNumber = Number(totalCount);
+
+    return {
+      posts: posts.map((post) => ({
+        id: post.id,
+        title: post.title,
+        content: post.content,
+        imageUrl: post.imageUrl,
+        authorId: post.authorId,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+        likesCount: post.likes.total,
+        isLiked: post.likes.byMe > 0,
+        commentsCount: post.comments,
+        author: {
+          id: post.author.id,
+          username: post.author.username,
+          name: post.author.name,
+          email: post.author.email,
+          profileImageUrl: post.author.profileImageUrl,
+        },
+      })),
+      pagination: {
+        page: safePage,
+        limit: safeLimit,
+        totalCount: totalCountNumber,
+        totalPages: Math.max(1, Math.ceil(totalCountNumber / safeLimit)),
+        hasMore: offset + posts.length < totalCountNumber,
+      },
+    };
   }
 
   async getMyPosts(userId: number) {

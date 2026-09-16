@@ -77,7 +77,7 @@ flutter run
 | `POST` | `/users/:id/follow` | Toggle follow/unfollow status |
 | `GET` | `/users/:id/followers` | Get user followers list |
 | `GET` | `/users/:id/following` | Get user following list |
-| `GET` | `/posts` | Get feed posts with like/comment counts |
+| `GET` | `/posts?page=1&limit=10` | Get paginated feed posts with like/comment counts |
 | `POST` | `/posts` | Create new post with image upload |
 | `PATCH` | `/posts/:id` | Update post title or content |
 | `DELETE` | `/posts/:id` | Delete post (author only) |

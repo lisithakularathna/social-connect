@@ -5,6 +5,86 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
+// Google Sign-In instance
+final GoogleSignIn _googleSignIn = GoogleSignIn(
+  scopes: ['email', 'profile'],
+);
+
+// ======================================================
+// GOOGLE SIGN-IN HELPER
+// ======================================================
+
+Future<String?> getGoogleIdToken() async {
+  try {
+    await _googleSignIn.signOut(); // Always prompt account picker
+    final account = await _googleSignIn.signIn();
+    if (account == null) return null;
+    final auth = await account.authentication;
+    return auth.idToken;
+  } catch (e) {
+    return null;
+  }
+}
+
+Future<void> handleGoogleSignIn(BuildContext context) async {
+  // Capture context-dependent objects before async gaps
+  final messenger = ScaffoldMessenger.of(context);
+  final navigator = Navigator.of(context);
+
+  final idToken = await getGoogleIdToken();
+  if (idToken == null) {
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Google sign-in was cancelled'),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    return;
+  }
+
+  try {
+    final response = await http.post(
+      Uri.parse('http://localhost:3000/auth/google'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'idToken': idToken}),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+      final accessToken = data['accessToken'];
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('accessToken', accessToken);
+
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const HomePage()),
+        (route) => false,
+      );
+    } else {
+      String errorMessage = 'Google sign-in failed';
+      try {
+        final err = jsonDecode(response.body);
+        if (err['message'] != null) {
+          errorMessage = err['message'].toString();
+        }
+      } catch (_) {}
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  } catch (e) {
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Connection error: $e'),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
+  }
+}
 
 final ValueNotifier<ThemeMode> themeNotifier =
     ValueNotifier(ThemeMode.light);
@@ -26,26 +106,132 @@ class SocialConnectApp extends StatelessWidget {
           title: 'Social Connect',
           themeMode: currentMode,
           theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.indigo,
-              brightness: Brightness.light,
+            brightness: Brightness.light,
+            scaffoldBackgroundColor: Colors.white,
+            colorScheme: const ColorScheme.light(
+              primary: Colors.black,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0,
+              centerTitle: false,
+              titleTextStyle: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w700,
+                fontSize: 22,
+                letterSpacing: -0.5,
+              ),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: const Color(0xFFF5F5F5),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Colors.black, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+            bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+              backgroundColor: Colors.white,
+              selectedItemColor: Colors.black,
+              unselectedItemColor: Colors.grey,
+              showSelectedLabels: false,
+              showUnselectedLabels: false,
+              type: BottomNavigationBarType.fixed,
+              elevation: 1,
+            ),
+            dividerTheme: const DividerThemeData(
+              color: Color(0xFFEFEFEF),
+              thickness: 1,
+              space: 0,
             ),
             useMaterial3: true,
-            appBarTheme: const AppBarTheme(
-              centerTitle: true,
-              elevation: 0,
-            ),
           ),
           darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: Colors.indigo,
-              brightness: Brightness.dark,
+            brightness: Brightness.dark,
+            scaffoldBackgroundColor: Colors.black,
+            colorScheme: const ColorScheme.dark(
+              primary: Colors.white,
+              onPrimary: Colors.black,
+              surface: Color(0xFF1C1C1C),
+              onSurface: Colors.white,
+            ),
+            appBarTheme: const AppBarTheme(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              centerTitle: false,
+              titleTextStyle: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 22,
+                letterSpacing: -0.5,
+              ),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: const Color(0xFF2A2A2A),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Colors.white, width: 1.5),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              hintStyle: const TextStyle(color: Colors.grey),
+              labelStyle: const TextStyle(color: Colors.grey),
+            ),
+            bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+              backgroundColor: Colors.black,
+              selectedItemColor: Colors.white,
+              unselectedItemColor: Colors.grey,
+              showSelectedLabels: false,
+              showUnselectedLabels: false,
+              type: BottomNavigationBarType.fixed,
+              elevation: 1,
+            ),
+            dividerTheme: const DividerThemeData(
+              color: Color(0xFF2A2A2A),
+              thickness: 1,
+              space: 0,
             ),
             useMaterial3: true,
-            appBarTheme: const AppBarTheme(
-              centerTitle: true,
-              elevation: 0,
-            ),
           ),
           home: const LoginPage(),
         );
@@ -216,96 +402,126 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
+      backgroundColor: isDark ? Colors.black : Colors.white,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 400,
-              ),
+              constraints: const BoxConstraints(maxWidth: 400),
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const SizedBox(height: 60),
+
+                  // ── Logo ──
+                  Center(
+                    child: Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFE1306C),
+                            Color(0xFFF77737),
+                            Color(0xFFFCAF45),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt_rounded,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // ── App Name ──
+                  Text(
+                    'Social Connect',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -1,
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  Text(
+                    'Sign in to continue',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                  ),
+
                   const SizedBox(height: 40),
 
-                  const Icon(
-                    Icons.people_alt_rounded,
-                    size: 80,
+                  // ── Email ──
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: InputDecoration(
+                      hintText: 'Email address',
+                      prefixIcon: Icon(Icons.email_outlined,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600], size: 20),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ── Password ──
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: InputDecoration(
+                      hintText: 'Password',
+                      prefixIcon: Icon(Icons.lock_outline,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600], size: 20),
+                    ),
                   ),
 
                   const SizedBox(height: 20),
 
-                  const Text(
-                    'Social Connect',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  const Text(
-                    'Connect with people',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16,
-                    ),
-                  ),
-
-                  const SizedBox(height: 40),
-
-                  TextField(
-                    controller: emailController,
-                    keyboardType:
-                        TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      hintText: 'Enter your email',
-                      prefixIcon:
-                          Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  TextField(
-                    controller: passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      hintText: 'Enter your password',
-                      prefixIcon:
-                          Icon(Icons.lock_outline),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
+                  // ── Login Button ──
                   SizedBox(
                     height: 52,
                     child: ElevatedButton(
-                      onPressed:
-                          isLoading ? null : login,
+                      onPressed: isLoading ? null : login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDark ? Colors.white : Colors.black,
+                        foregroundColor: isDark ? Colors.black : Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
                       child: isLoading
-                          ? const SizedBox(
-                              height: 24,
-                              width: 24,
-                              child:
-                                  CircularProgressIndicator(),
+                          ? SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: isDark ? Colors.black : Colors.white,
+                              ),
                             )
                           : const Text(
-                              'Login',
+                              'Log in',
                               style: TextStyle(
-                                fontSize: 17,
-                                fontWeight:
-                                    FontWeight.bold,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                     ),
@@ -313,19 +529,97 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 20),
 
-                  TextButton(
-  onPressed: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const RegisterPage(),
-      ),
-    );
-  },
-  child: const Text(
-    "Don't have an account? Register",
-  ),
-),
+                  // ── OR Divider ──
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: isDark ? Colors.grey[800] : Colors.grey[300])),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Text(
+                          'OR',
+                          style: TextStyle(
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: isDark ? Colors.grey[800] : Colors.grey[300])),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Google Sign-In ──
+                  SizedBox(
+                    height: 52,
+                    child: OutlinedButton(
+                      onPressed: isLoading ? null : () => handleGoogleSignIn(context),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: isDark ? Colors.grey[700]! : Colors.grey[300]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        foregroundColor: isDark ? Colors.white : Colors.black,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.network(
+                            'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                            height: 22,
+                            width: 22,
+                            errorBuilder: (_, _, _) =>
+                                const Icon(Icons.g_mobiledata, size: 26),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'Continue with Google',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // ── Register link ──
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Don't have an account? ",
+                        style: TextStyle(
+                          color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          fontSize: 14,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const RegisterPage(),
+                            ),
+                          );
+                        },
+                        child: Text(
+                          'Sign up',
+                          style: TextStyle(
+                            color: isDark ? Colors.white : Colors.black,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -335,6 +629,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
+
 
 // ======================================================
 // HOME PAGE / FEED
@@ -425,6 +720,9 @@ class _HomePageState extends State<HomePage> {
 
         if (data is List) {
           posts = data;
+        } else if (data is Map && data['posts'] is List) {
+          // Backend now returns { posts, pagination } for /posts.
+          posts = data['posts'];
         } else if (data is Map &&
             data['value'] is List) {
           posts = data['value'];
@@ -476,133 +774,151 @@ class _HomePageState extends State<HomePage> {
   // BUILD
   // ====================================================
 
+  int _currentNavIndex = 0;
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final borderColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFEFEFEF);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Social Connect',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            onPressed: () {
-              themeNotifier.value = themeNotifier.value == ThemeMode.light
-                  ? ThemeMode.dark
-                  : ThemeMode.light;
-            },
-            icon: Icon(
-              themeNotifier.value == ThemeMode.light
-                  ? Icons.dark_mode_outlined
-                  : Icons.light_mode_outlined,
-            ),
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const SearchPage(),
+      appBar: _currentNavIndex == 0
+          ? AppBar(
+              title: Text(
+                'Social Connect',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 22,
+                  letterSpacing: -0.8,
+                  color: isDark ? Colors.white : Colors.black,
                 ),
-              );
-            },
-            icon: const Icon(Icons.search),
-          ),
-          IconButton(
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NotificationsPage(),
+              ),
+              actions: [
+                IconButton(
+                  onPressed: () {
+                    themeNotifier.value = themeNotifier.value == ThemeMode.light
+                        ? ThemeMode.dark
+                        : ThemeMode.light;
+                  },
+                  icon: Icon(
+                    themeNotifier.value == ThemeMode.light
+                        ? Icons.dark_mode_outlined
+                        : Icons.light_mode_outlined,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
                 ),
-              );
-              loadUnreadNotifications();
-            },
-            icon: unreadNotificationCount > 0
-                ? Badge.count(
-                    count: unreadNotificationCount,
-                    child: const Icon(Icons.notifications_outlined),
-                  )
-                : const Icon(Icons.notifications_outlined),
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ProfilePage(),
+                IconButton(
+                  onPressed: logout,
+                  icon: Icon(Icons.logout,
+                      color: isDark ? Colors.white : Colors.black),
                 ),
-              );
-            },
-            icon: const Icon(Icons.person),
+              ],
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Divider(height: 1, color: borderColor),
+              ),
+            )
+          : null,
+
+      body: IndexedStack(
+        index: _currentNavIndex,
+        children: [
+          // ── 0: Feed ──
+          RefreshIndicator(
+            onRefresh: loadPosts,
+            child: buildFeed(),
           ),
-          IconButton(
-            onPressed: logout,
-            icon: const Icon(Icons.logout),
-          ),
+          // ── 1: Search ──
+          const SearchPage(),
+          // ── 2: Create Post (modal, not a page in stack) ──
+          const SizedBox.shrink(),
+          // ── 3: Notifications ──
+          const NotificationsPage(),
+          // ── 4: Profile ──
+          const ProfilePage(),
         ],
       ),
 
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          final created = await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const CreatePostPage(),
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: borderColor, width: 1)),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentNavIndex == 2 ? 0 : _currentNavIndex,
+          onTap: (index) async {
+            if (index == 2) {
+              // Add post
+              final created = await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CreatePostPage(),
+                ),
+              );
+              if (created == true) loadPosts();
+              return;
+            }
+            setState(() => _currentNavIndex = index);
+            if (index == 3) loadUnreadNotifications();
+          },
+          items: [
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Home',
             ),
-          );
-          if (created == true) {
-            loadPosts();
-          }
-        },
-        icon: const Icon(Icons.add_photo_alternate_rounded),
-        label: const Text('New Post'),
-      ),
-
-      body: RefreshIndicator(
-        onRefresh: loadPosts,
-        child: buildBody(),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.search_outlined),
+              activeIcon: Icon(Icons.search),
+              label: 'Search',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.add_box_outlined),
+              activeIcon: Icon(Icons.add_box),
+              label: 'Add',
+            ),
+            BottomNavigationBarItem(
+              icon: unreadNotificationCount > 0
+                  ? Badge.count(
+                      count: unreadNotificationCount,
+                      child: const Icon(Icons.favorite_outline),
+                    )
+                  : const Icon(Icons.favorite_outline),
+              activeIcon: const Icon(Icons.favorite),
+              label: 'Notifications',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline),
+              activeIcon: Icon(Icons.person),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
 
   // ====================================================
-  // BODY
+  // FEED
   // ====================================================
 
-  Widget buildBody() {
+  Widget buildFeed() {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (errorMessage != null) {
       return ListView(
         children: [
-          SizedBox(
-            height:
-                MediaQuery.of(context).size.height * 0.35,
-          ),
+          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
           Center(
             child: Column(
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 60,
-                ),
+                const Icon(Icons.wifi_off_rounded, size: 60, color: Colors.grey),
+                const SizedBox(height: 12),
+                Text(errorMessage!, textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.grey)),
                 const SizedBox(height: 16),
-                Text(
-                  errorMessage!,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: loadPosts,
-                  child: const Text('Retry'),
-                ),
+                ElevatedButton(onPressed: loadPosts, child: const Text('Retry')),
               ],
             ),
           ),
@@ -613,14 +929,16 @@ class _HomePageState extends State<HomePage> {
     if (posts.isEmpty) {
       return ListView(
         children: const [
-          SizedBox(height: 250),
+          SizedBox(height: 200),
           Center(
-            child: Text(
-              'No posts yet',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+            child: Column(
+              children: [
+                Icon(Icons.photo_camera_outlined, size: 70, color: Colors.grey),
+                SizedBox(height: 12),
+                Text('No posts yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                SizedBox(height: 4),
+                Text('Follow people to see their posts', style: TextStyle(color: Colors.grey)),
+              ],
             ),
           ),
         ],
@@ -628,21 +946,14 @@ class _HomePageState extends State<HomePage> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.only(
-        top: 8,
-        bottom: 20,
-      ),
       itemCount: posts.length,
       itemBuilder: (context, index) {
-        final post = posts[index];
-
-        return PostCard(
-          post: post,
-        );
+        return PostCard(post: posts[index]);
       },
     );
   }
 }
+
 
 // ======================================================
 // POST CARD
@@ -660,309 +971,193 @@ class PostCard extends StatefulWidget {
   State<PostCard> createState() => _PostCardState();
 }
 
-class _PostCardState extends State<PostCard> {
+class _PostCardState extends State<PostCard>
+    with SingleTickerProviderStateMixin {
   bool isLiked = false;
   bool isLoadingLike = false;
   int likeCount = 0;
+  bool _showHeart = false;
+  late AnimationController _heartController;
+  late Animation<double> _heartAnim;
 
   @override
   void initState() {
     super.initState();
-    loadLikes();
-  }
+    // Use data from backend response if available
+    likeCount = widget.post['likesCount'] ?? 0;
+    isLiked = widget.post['isLiked'] ?? false;
 
-  Future<void> loadLikes() async {
-    final postId = widget.post['id'];
-
-    try {
-      final prefs =
-          await SharedPreferences.getInstance();
-
-      final token =
-          prefs.getString('accessToken');
-
-      if (token == null) return;
-
-      final response = await http.get(
-        Uri.parse(
-          'http://localhost:3000/likes/$postId',
-        ),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        final likes = data['likes'] as List;
-
-        final currentUserId =
-            _getCurrentUserId(token);
-
-        bool userLiked = false;
-
-        for (final like in likes) {
-          if (like['userId'] == currentUserId) {
-            userLiked = true;
-            break;
-          }
-        }
-
-        if (mounted) {
-          setState(() {
-            likeCount = data['likeCount'] ?? 0;
-            isLiked = userLiked;
-          });
-        }
+    _heartController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _heartAnim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _heartController, curve: Curves.elasticOut),
+    );
+    _heartController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) setState(() => _showHeart = false);
+        });
       }
-    } catch (e) {
-      print('Load likes error: $e');
-    }
+    });
   }
 
-  int? _getCurrentUserId(String token) {
-    try {
-      final parts = token.split('.');
-
-      if (parts.length != 3) return null;
-
-      final normalized =
-          base64Url.normalize(parts[1]);
-
-      final payload =
-          jsonDecode(
-            utf8.decode(
-              base64Url.decode(normalized),
-            ),
-          );
-
-      return payload['sub'];
-    } catch (e) {
-      return null;
-    }
+  @override
+  void dispose() {
+    _heartController.dispose();
+    super.dispose();
   }
 
   Future<void> toggleLike() async {
     if (isLoadingLike) return;
-
-    setState(() {
-      isLoadingLike = true;
-    });
+    setState(() => isLoadingLike = true);
 
     try {
-      final prefs =
-          await SharedPreferences.getInstance();
-
-      final token =
-          prefs.getString('accessToken');
-
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('accessToken');
       if (token == null) return;
 
       final postId = widget.post['id'];
-
       http.Response response;
 
       if (isLiked) {
         response = await http.delete(
-          Uri.parse(
-            'http://localhost:3000/likes/$postId',
-          ),
-          headers: {
-            'Authorization': 'Bearer $token',
-          },
+          Uri.parse('http://localhost:3000/likes/$postId'),
+          headers: {'Authorization': 'Bearer $token'},
         );
       } else {
         response = await http.post(
-          Uri.parse(
-            'http://localhost:3000/likes/$postId',
-          ),
-          headers: {
-            'Authorization': 'Bearer $token',
-          },
+          Uri.parse('http://localhost:3000/likes/$postId'),
+          headers: {'Authorization': 'Bearer $token'},
         );
       }
 
-      if (response.statusCode == 200 ||
-          response.statusCode == 201) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         setState(() {
           isLiked = !isLiked;
-
-          if (isLiked) {
-            likeCount++;
-          } else {
-            likeCount--;
-          }
-        });
-      } else {
-        print(
-          'Like error: ${response.body}',
-        );
-      }
-    } catch (e) {
-      print(
-        'Like connection error: $e',
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          isLoadingLike = false;
+          likeCount += isLiked ? 1 : -1;
         });
       }
+    } catch (_) {}
+    finally {
+      if (mounted) setState(() => isLoadingLike = false);
     }
+  }
+
+  void _doubleTapLike() {
+    if (!isLiked) toggleLike();
+    setState(() => _showHeart = true);
+    _heartController.forward(from: 0);
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final author = widget.post['author'];
+    final username = author?['username'] ?? author?['name'] ?? 'Unknown';
+    final name = author?['name'] ?? username;
+    final title = widget.post['title'] ?? '';
+    final content = widget.post['content'] ?? '';
+    final imageUrl = widget.post['imageUrl'];
+    final authorPic = author?['profileImageUrl'];
+    final commentsCount = widget.post['commentsCount'] ?? 0;
+    final timeAgo = formatTimeAgo(widget.post['createdAt']);
 
-    final username =
-        author?['username'] ??
-        author?['name'] ??
-        'Unknown User';
+    final cardBg = isDark ? Colors.black : Colors.white;
+    final dividerColor = isDark ? const Color(0xFF1C1C1C) : const Color(0xFFEFEFEF);
 
-    final name =
-        author?['name'] ??
-        username;
-
-    final title =
-        widget.post['title'] ?? '';
-
-    final content =
-        widget.post['content'] ?? '';
-
-    final imageUrl =
-        widget.post['imageUrl'];
-
-    return Card(
-      margin: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 8,
-      ),
-      clipBehavior: Clip.antiAlias,
-      elevation: 1.5,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return Container(
+      color: cardBg,
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
 
-          // USER INFO (Clickable to UserProfilePage)
-          InkWell(
+          // ── Header: Avatar + Username + Dots ──
+          GestureDetector(
             onTap: () {
               final authorId = author?['id'];
               if (authorId != null) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => UserProfilePage(
-                      userId: authorId,
-                      userName: name.toString(),
-                    ),
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (context) => UserProfilePage(
+                    userId: authorId,
+                    userName: name.toString(),
                   ),
-                );
+                ));
               }
             },
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
-                  Builder(
-                    builder: (context) {
-                      final authorPic = author != null &&
-                              author['profileImageUrl'] != null &&
-                              author['profileImageUrl'].toString().isNotEmpty
-                          ? author['profileImageUrl'].toString()
-                          : null;
-
-                      return CircleAvatar(
-                        radius: 20,
-                        backgroundImage: authorPic != null
-                            ? NetworkImage(authorPic)
+                  // Avatar with gradient ring
+                  Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFFE1306C), Color(0xFFF77737), Color(0xFFFCAF45)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: cardBg,
+                        shape: BoxShape.circle,
+                      ),
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: isDark ? Colors.grey[800] : Colors.grey[200],
+                        backgroundImage: (authorPic != null && authorPic.toString().isNotEmpty)
+                            ? NetworkImage(authorPic.toString())
                             : null,
-                        child: authorPic == null
+                        child: (authorPic == null || authorPic.toString().isEmpty)
                             ? Text(
-                                username
-                                    .toString()
-                                    .substring(0, 1)
-                                    .toUpperCase(),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                username.toString().substring(0, 1).toUpperCase(),
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                               )
                             : null,
-                      );
-                    },
+                      ),
+                    ),
                   ),
 
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
 
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          name.toString(),
-                          style: const TextStyle(
-                            fontWeight:
-                                FontWeight.bold,
-                            fontSize: 15,
+                          username.toString(),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13.5,
+                            color: isDark ? Colors.white : Colors.black,
                           ),
                         ),
-                        Row(
-                          children: [
-                            Text(
-                              '@${username.toString()}',
-                              style: TextStyle(
-                                color:
-                                    Colors.grey[600],
-                                fontSize: 12,
-                              ),
+                        if (timeAgo.isNotEmpty)
+                          Text(
+                            timeAgo,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[500] : Colors.grey[500],
                             ),
-                            if (widget.post['createdAt'] != null) ...[
-                              Text(
-                                ' • ',
-                                style: TextStyle(
-                                  color: Colors.grey[500],
-                                  fontSize: 12,
-                                ),
-                              ),
-                              Text(
-                                formatTimeAgo(
-                                  widget.post['createdAt'],
-                                ),
-                                style: TextStyle(
-                                  color: Colors.grey[500],
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                          ),
                       ],
                     ),
                   ),
 
                   IconButton(
-                    icon: const Icon(
-                      Icons.more_vert,
-                      size: 20,
-                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: Icon(Icons.more_horiz,
+                        color: isDark ? Colors.white : Colors.black),
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => PostDetailPage(
-                            post: widget.post,
-                          ),
-                        ),
-                      );
+                      Navigator.push(context, MaterialPageRoute(
+                        builder: (context) => PostDetailPage(post: widget.post),
+                      ));
                     },
                   ),
                 ],
@@ -970,202 +1165,185 @@ class _PostCardState extends State<PostCard> {
             ),
           ),
 
-          // IMAGE (Clickable to PostDetailPage)
-          if (imageUrl != null &&
-              imageUrl.toString().isNotEmpty)
+          // ── Image with double-tap to like ──
+          if (imageUrl != null && imageUrl.toString().isNotEmpty)
             GestureDetector(
+              onDoubleTap: _doubleTapLike,
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PostDetailPage(
-                      post: widget.post,
-                    ),
-                  ),
-                );
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (context) => PostDetailPage(post: widget.post),
+                ));
               },
-              child: Image.network(
-                imageUrl.toString(),
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder:
-                    (
-                      context,
-                      error,
-                      stackTrace,
-                    ) {
-                  return Container(
-                    height: 250,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Image.network(
+                    imageUrl.toString(),
                     width: double.infinity,
-                    color: Colors.grey[200],
-                    child: const Center(
-                      child: Icon(
-                        Icons.broken_image,
-                        size: 60,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => Container(
+                      height: 300,
+                      color: isDark ? Colors.grey[900] : Colors.grey[100],
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined, size: 50, color: Colors.grey),
                       ),
                     ),
-                  );
-                },
+                  ),
+                  if (_showHeart)
+                    ScaleTransition(
+                      scale: _heartAnim,
+                      child: const Icon(Icons.favorite, color: Colors.white, size: 100),
+                    ),
+                ],
+              ),
+            )
+          else
+            // No image - show title as tap-target
+            GestureDetector(
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (context) => PostDetailPage(post: widget.post),
+                ));
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
+                color: isDark ? const Color(0xFF1C1C1C) : const Color(0xFFF8F8F8),
+                child: Text(
+                  title.toString(),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? Colors.white : Colors.black,
+                  ),
+                ),
               ),
             ),
 
-          // LIKE / COMMENT
+          // ── Action Row: Like / Comment / Share / Bookmark ──
           Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 8,
-              vertical: 4,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             child: Row(
               children: [
-                IconButton(
-                  onPressed: toggleLike,
-                  icon: isLoadingLike
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child:
-                              CircularProgressIndicator(
-                            strokeWidth: 2,
+                // Like
+                GestureDetector(
+                  onTap: isLoadingLike ? null : toggleLike,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: isLoadingLike
+                        ? const SizedBox(
+                            width: 22, height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            isLiked ? Icons.favorite : Icons.favorite_border,
+                            size: 26,
+                            color: isLiked ? Colors.red : (isDark ? Colors.white : Colors.black),
                           ),
-                        )
-                      : Icon(
-                          isLiked
-                              ? Icons.favorite
-                              : Icons.favorite_border,
-                          color: isLiked
-                              ? Colors.red
-                              : null,
-                        ),
-                ),
-
-                if (likeCount > 0)
-                  Text(
-                    '$likeCount',
-                    style: const TextStyle(
-                      fontWeight:
-                          FontWeight.bold,
-                      fontSize: 14,
-                    ),
                   ),
+                ),
+                const SizedBox(width: 4),
 
-                const SizedBox(width: 6),
-
-                IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => CommentsPage(
-                          postId: widget.post['id'],
-                        ),
-                      ),
-                    );
+                // Comment
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (context) => CommentsPage(postId: widget.post['id']),
+                    ));
                   },
-                  icon: const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    size: 22,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: Icon(Icons.chat_bubble_outline_rounded,
+                        size: 24, color: isDark ? Colors.white : Colors.black),
                   ),
                 ),
+                const SizedBox(width: 4),
 
-                if (widget.post['commentsCount'] != null &&
-                    widget.post['commentsCount'] > 0)
-                  Text(
-                    '${widget.post['commentsCount']}',
-                    style: const TextStyle(
-                      fontWeight:
-                          FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
+                // Share
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  child: Icon(Icons.send_outlined,
+                      size: 24, color: isDark ? Colors.white : Colors.black),
+                ),
 
                 const Spacer(),
 
-                IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PostDetailPage(
-                          post: widget.post,
-                        ),
-                      ),
-                    );
-                  },
-                  icon: const Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                  ),
+                // Bookmark
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  child: Icon(Icons.bookmark_border,
+                      size: 26, color: isDark ? Colors.white : Colors.black),
                 ),
               ],
             ),
           ),
 
-          // POST CONTENT (Clickable to PostDetailPage)
-          GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => PostDetailPage(
-                    post: widget.post,
-                  ),
+          // ── Likes count ──
+          if (likeCount > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Text(
+                '$likeCount ${likeCount == 1 ? 'like' : 'likes'}',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  color: isDark ? Colors.white : Colors.black,
                 ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                14,
-                0,
-                14,
-                14,
-              ),
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  if (title
-                      .toString()
-                      .isNotEmpty)
-                    Text(
-                      title.toString(),
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-
-                  if (title
-                          .toString()
-                          .isNotEmpty &&
-                      content
-                          .toString()
-                          .isNotEmpty)
-                    const SizedBox(height: 6),
-
-                  if (content
-                      .toString()
-                      .isNotEmpty)
-                    Text(
-                      content.toString(),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[800],
-                        height: 1.4,
-                      ),
-                    ),
-                ],
               ),
             ),
-          ),
+
+          // ── Caption ──
+          if (title.toString().isNotEmpty || content.toString().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 2),
+              child: RichText(
+                text: TextSpan(
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: isDark ? Colors.white : Colors.black,
+                    height: 1.4,
+                  ),
+                  children: [
+                    TextSpan(
+                      text: '${username.toString()} ',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    TextSpan(
+                      text: title.toString().isNotEmpty ? title.toString() : content.toString(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // ── View comments ──
+          if (commentsCount > 0)
+            GestureDetector(
+              onTap: () {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (context) => CommentsPage(postId: widget.post['id']),
+                ));
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 2, 14, 2),
+                child: Text(
+                  'View all $commentsCount comment${commentsCount == 1 ? '' : 's'}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.grey[500] : Colors.grey[500],
+                  ),
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 10),
+
+          Divider(height: 1, color: dividerColor),
         ],
       ),
     );
   }
-}
-
-
-
+  }
 class CommentsPage extends StatefulWidget {
   final int postId;
 
@@ -1792,139 +1970,247 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
+      backgroundColor: isDark ? Colors.black : Colors.white,
       appBar: AppBar(
-        title: const Text(
-          'Create Account',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-          ),
+        backgroundColor: isDark ? Colors.black : Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new_rounded,
+              color: isDark ? Colors.white : Colors.black, size: 20),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 400,
-              ),
+              constraints: const BoxConstraints(maxWidth: 400),
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: 20),
-
-                  const Icon(
-                    Icons.person_add_alt_1,
-                    size: 75,
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  const Text(
-                    'Create your account',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 30),
-
-                  TextField(
-                    controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      hintText: 'Enter your name',
-                      prefixIcon: Icon(
-                        Icons.person_outline,
+                  // ── Logo ──
+                  Center(
+                    child: Container(
+                      width: 72,
+                      height: 72,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFE1306C),
+                            Color(0xFFF77737),
+                            Color(0xFFFCAF45),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  TextField(
-                    controller: usernameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Username *',
-                      hintText: 'Enter username',
-                      prefixIcon: Icon(
-                        Icons.alternate_email,
+                      child: const Icon(
+                        Icons.person_add_rounded,
+                        color: Colors.white,
+                        size: 36,
                       ),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  TextField(
-                    controller: emailController,
-                    keyboardType:
-                        TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email *',
-                      hintText: 'Enter your email',
-                      prefixIcon: Icon(
-                        Icons.email_outlined,
-                      ),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  TextField(
-                    controller: passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Password *',
-                      hintText: 'Enter your password',
-                      prefixIcon: Icon(
-                        Icons.lock_outline,
-                      ),
-                      border: OutlineInputBorder(),
                     ),
                   ),
 
                   const SizedBox(height: 24),
 
-                  SizedBox(
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed:
-                          isLoading ? null : register,
-                      child: isLoading
-                          ? const SizedBox(
-                              height: 24,
-                              width: 24,
-                              child:
-                                  CircularProgressIndicator(),
-                            )
-                          : const Text(
-                              'Register',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight:
-                                    FontWeight.bold,
-                              ),
-                            ),
+                  Text(
+                    'Create Account',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  Text(
+                    'Sign up to see photos and videos\nfrom your friends',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // ── Name ──
+                  TextField(
+                    controller: nameController,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: InputDecoration(
+                      hintText: 'Full Name',
+                      prefixIcon: Icon(Icons.badge_outlined,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600], size: 20),
                     ),
                   ),
 
                   const SizedBox(height: 12),
 
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: const Text(
-                      'Already have an account? Login',
+                  // ── Username ──
+                  TextField(
+                    controller: usernameController,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: InputDecoration(
+                      hintText: 'Username',
+                      prefixIcon: Icon(Icons.alternate_email,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600], size: 20),
                     ),
                   ),
+
+                  const SizedBox(height: 12),
+
+                  // ── Email ──
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: InputDecoration(
+                      hintText: 'Email address',
+                      prefixIcon: Icon(Icons.email_outlined,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600], size: 20),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ── Password ──
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: InputDecoration(
+                      hintText: 'Password (min. 6 chars)',
+                      prefixIcon: Icon(Icons.lock_outline,
+                          color: isDark ? Colors.grey[400] : Colors.grey[600], size: 20),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Register Button ──
+                  SizedBox(
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: isLoading ? null : register,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDark ? Colors.white : Colors.black,
+                        foregroundColor: isDark ? Colors.black : Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: isLoading
+                          ? SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: isDark ? Colors.black : Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Sign up',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── OR Divider ──
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: isDark ? Colors.grey[800] : Colors.grey[300])),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        child: Text(
+                          'OR',
+                          style: TextStyle(
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      Expanded(child: Divider(color: isDark ? Colors.grey[800] : Colors.grey[300])),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Google Sign-In ──
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton(
+                      onPressed: isLoading ? null : () => handleGoogleSignIn(context),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: isDark ? Colors.grey[700]! : Colors.grey[300]!),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        foregroundColor: isDark ? Colors.white : Colors.black,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.network(
+                            'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                            height: 20,
+                            width: 20,
+                            errorBuilder: (_, _, _) =>
+                                const Icon(Icons.g_mobiledata, size: 24),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'Continue with Google',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 28),
+
+                  // ── Login link ──
+                  Center(
+                    child: GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: RichText(
+                        text: TextSpan(
+                          style: TextStyle(fontSize: 14, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                          children: [
+                            const TextSpan(text: 'Already have an account? '),
+                            TextSpan(
+                              text: 'Log in',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
@@ -2225,45 +2511,296 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  void _showEditProfileModal() {
+    nameController.text = name ?? '';
+    usernameController.text = username ?? '';
+    bioController.text = bio ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF121212) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+              left: 20,
+              right: 20,
+              top: 16,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text('Cancel', style: TextStyle(color: isDark ? Colors.grey[400] : Colors.grey[700])),
+                      ),
+                      Text(
+                        'Edit profile',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : Colors.black,
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                Navigator.pop(context);
+                                await updateProfile();
+                              },
+                        child: Text(
+                          'Done',
+                          style: TextStyle(
+                            color: const Color(0xFF3797EF),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  Center(
+                    child: Column(
+                      children: [
+                        CircleAvatar(
+                          radius: 45,
+                          backgroundImage: profileImageUrl != null && profileImageUrl!.isNotEmpty
+                              ? NetworkImage(profileImageUrl!)
+                              : null,
+                          child: profileImageUrl == null || profileImageUrl!.isEmpty
+                              ? const Icon(Icons.person, size: 45)
+                              : null,
+                        ),
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () async {
+                            await pickImage();
+                            setModalState(() {});
+                          },
+                          child: const Text(
+                            'Change profile photo',
+                            style: TextStyle(
+                              color: Color(0xFF3797EF),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: nameController,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: usernameController,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: 'Username',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: bioController,
+                    maxLines: 3,
+                    style: TextStyle(color: isDark ? Colors.white : Colors.black),
+                    decoration: const InputDecoration(
+                      labelText: 'Bio',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  int _selectedTab = 0;
+
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final borderColor = isDark ? const Color(0xFF2A2A2A) : const Color(0xFFEFEFEF);
+
     return Scaffold(
+      backgroundColor: isDark ? Colors.black : Colors.white,
       appBar: AppBar(
-        title: const Text(
-          'Profile',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
+        backgroundColor: isDark ? Colors.black : Colors.white,
+        elevation: 0,
+        titleSpacing: 16,
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.lock_outline, size: 16, color: isDark ? Colors.white : Colors.black),
+            const SizedBox(width: 6),
+            Text(
+              username ?? 'profile',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 20,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.add_box_outlined, color: isDark ? Colors.white : Colors.black),
+            onPressed: () async {
+              final created = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CreatePostPage()),
+              );
+              if (created == true) loadMyPosts();
+            },
           ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.menu_rounded, color: isDark ? Colors.white : Colors.black),
+            onSelected: (val) async {
+              if (val == 'theme') {
+                themeNotifier.value = themeNotifier.value == ThemeMode.light
+                    ? ThemeMode.dark
+                    : ThemeMode.light;
+              } else if (val == 'logout') {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.remove('accessToken');
+                if (!context.mounted) return;
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginPage()),
+                  (route) => false,
+                );
+              }
+            },
+            itemBuilder: (ctx) => [
+              PopupMenuItem(
+                value: 'theme',
+                child: Row(
+                  children: [
+                    Icon(
+                      themeNotifier.value == ThemeMode.light ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(themeNotifier.value == ThemeMode.light ? 'Dark mode' : 'Light mode'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 20, color: Colors.redAccent),
+                    SizedBox(width: 10),
+                    Text('Log out', style: TextStyle(color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: borderColor),
         ),
       ),
       body: buildBody(),
     );
   }
 
+  Widget _buildStatColumn(String label, String count) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          count,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: isDark ? Colors.white : Colors.black,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            color: isDark ? Colors.grey[400] : Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHighlightItem(String title, IconData icon, bool isDark, bool isAdd) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 16),
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF2F2F2),
+              border: Border.all(
+                color: isDark ? const Color(0xFF363636) : const Color(0xFFDBDBDB),
+                width: 1.5,
+              ),
+            ),
+            child: Icon(icon, color: isDark ? Colors.white : Colors.black, size: 24),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[300] : Colors.grey[700]),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget buildBody() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (errorMessage != null) {
       return Center(
         child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.error_outline,
-              size: 60,
-            ),
+            const Icon(Icons.error_outline, size: 60),
             const SizedBox(height: 16),
-            Text(
-              errorMessage!,
-              textAlign: TextAlign.center,
-            ),
+            Text(errorMessage!, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
@@ -2271,8 +2808,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   isLoading = true;
                   errorMessage = null;
                 });
-
                 loadProfile();
+                loadMyPosts();
               },
               child: const Text('Retry'),
             ),
@@ -2281,520 +2818,332 @@ class _ProfilePageState extends State<ProfilePage> {
       );
     }
 
-    final displayName =
-        name?.isNotEmpty == true
-            ? name!
-            : username ?? 'User';
-
-    final firstLetter =
-        displayName.isNotEmpty
-            ? displayName
-                .substring(0, 1)
-                .toUpperCase()
-            : 'U';
+    final displayName = name?.isNotEmpty == true ? name! : username ?? 'User';
+    final firstLetter = displayName.isNotEmpty ? displayName.substring(0, 1).toUpperCase() : 'U';
 
     return RefreshIndicator(
-      onRefresh: loadProfile,
-      child: ListView(
-        padding:
-            const EdgeInsets.all(24),
-        children: [
-          const SizedBox(height: 20),
+      onRefresh: () async {
+        await loadProfile();
+        await loadMyPosts();
+      },
+      child: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
 
-          // PROFILE IMAGE
-          Center(
-            child: Stack(
-              children: [
-                CircleAvatar(
-                  radius: 60,
-                  backgroundImage:
-                      profileImageUrl != null &&
-                              profileImageUrl!
-                                  .isNotEmpty
-                          ? NetworkImage(
-                              profileImageUrl!,
-                            )
-                          : null,
-                  child:
-                      profileImageUrl == null ||
-                              profileImageUrl!
-                                  .isEmpty
-                          ? Text(
-                              firstLetter,
-                              style:
-                                  const TextStyle(
-                                fontSize: 40,
-                                fontWeight:
-                                    FontWeight.bold,
-                              ),
-                            )
-                          : null,
-                ),
-
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: CircleAvatar(
-                    radius: 20,
-                    child: IconButton(
-                      padding:
-                          EdgeInsets.zero,
-                      onPressed: pickImage,
-                      icon: const Icon(
-                        Icons.camera_alt,
-                        size: 20,
+                  // ── Header Row: Avatar + Stats ──
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xFFE1306C),
+                              Color(0xFFF77737),
+                              Color(0xFFFCAF45),
+                            ],
+                            begin: Alignment.topRight,
+                            end: Alignment.bottomLeft,
+                          ),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isDark ? Colors.black : Colors.white,
+                          ),
+                          child: CircleAvatar(
+                            radius: 40,
+                            backgroundImage: profileImageUrl != null && profileImageUrl!.isNotEmpty
+                                ? NetworkImage(profileImageUrl!)
+                                : null,
+                            child: profileImageUrl == null || profileImageUrl!.isEmpty
+                                ? Text(
+                                    firstLetter,
+                                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                                  )
+                                : null,
+                          ),
+                        ),
                       ),
+                      Expanded(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _buildStatColumn('Posts', isPostsLoading ? '–' : '${myPosts.length}'),
+                            GestureDetector(
+                              onTap: myUserId == null
+                                  ? null
+                                  : () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => UserListPage(
+                                            userId: myUserId!,
+                                            title: 'Followers',
+                                            endpoint: 'followers',
+                                          ),
+                                        ),
+                                      ),
+                              child: _buildStatColumn('Followers', '$followersCount'),
+                            ),
+                            GestureDetector(
+                              onTap: myUserId == null
+                                  ? null
+                                  : () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => UserListPage(
+                                            userId: myUserId!,
+                                            title: 'Following',
+                                            endpoint: 'following',
+                                          ),
+                                        ),
+                                      ),
+                              child: _buildStatColumn('Following', '$followingCount'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // ── Name & Bio ──
+                  Text(
+                    displayName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: isDark ? Colors.white : Colors.black,
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // NAME
-          Center(
-            child: Text(
-              displayName,
-              style: const TextStyle(
-                fontSize: 25,
-                fontWeight:
-                    FontWeight.bold,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 6),
-
-          // USERNAME
-          Center(
-            child: Text(
-              '@${username ?? ''}',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[600],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // STATS ROW
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade50,
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Column(
-                  children: [
+                  if (bio != null && bio!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
                     Text(
-                      isPostsLoading ? '–' : '${myPosts.length}',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Posts',
+                      bio!,
                       style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
+                        fontSize: 14,
+                        color: isDark ? Colors.grey[300] : Colors.grey[800],
+                        height: 1.3,
                       ),
                     ),
                   ],
-                ),
-                Container(height: 28, width: 1, color: Colors.grey.shade300),
-                InkWell(
-                  onTap: myUserId == null
-                      ? null
-                      : () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => UserListPage(
-                                userId: myUserId!,
-                                title: 'Followers',
-                                endpoint: 'followers',
-                              ),
-                            ),
-                          );
-                        },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                    child: Column(
+
+                  const SizedBox(height: 16),
+
+                  // ── Action Buttons ──
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _showEditProfileModal,
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: isDark ? const Color(0xFF363636) : const Color(0xFFDBDBDB)),
+                            backgroundColor: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEFEFEF),
+                            foregroundColor: isDark ? Colors.white : Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text('Edit profile', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Profile link copied: @$username')),
+                            );
+                          },
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: isDark ? const Color(0xFF363636) : const Color(0xFFDBDBDB)),
+                            backgroundColor: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEFEFEF),
+                            foregroundColor: isDark ? Colors.white : Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text('Share profile', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  // ── Highlights Row ──
+                  SizedBox(
+                    height: 85,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
                       children: [
-                        Text(
-                          '$followersCount',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Followers',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[600],
-                          ),
-                        ),
+                        _buildHighlightItem('New', Icons.add, isDark, true),
+                        _buildHighlightItem('Memories', Icons.star_border, isDark, false),
+                        _buildHighlightItem('Travel', Icons.flight, isDark, false),
+                        _buildHighlightItem('Vibes', Icons.music_note, isDark, false),
                       ],
                     ),
                   ),
-                ),
-                Container(height: 28, width: 1, color: Colors.grey.shade300),
-                InkWell(
-                  onTap: myUserId == null
-                      ? null
-                      : () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => UserListPage(
-                                userId: myUserId!,
-                                title: 'Following',
-                                endpoint: 'following',
+
+                  const SizedBox(height: 12),
+
+                  // ── Tab Bar (Grid / Tagged) ──
+                  Row(
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(() => _selectedTab = 0),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: _selectedTab == 0 ? (isDark ? Colors.white : Colors.black) : Colors.transparent,
+                                  width: 2,
+                                ),
                               ),
                             ),
-                          );
-                        },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 4,
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          '$followingCount',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                            child: Icon(
+                              Icons.grid_on_sharp,
+                              color: _selectedTab == 0 ? (isDark ? Colors.white : Colors.black) : Colors.grey,
+                              size: 22,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Following',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[600],
+                      ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(() => _selectedTab = 1),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: _selectedTab == 1 ? (isDark ? Colors.white : Colors.black) : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.account_box_outlined,
+                              color: _selectedTab == 1 ? (isDark ? Colors.white : Colors.black) : Colors.grey,
+                              size: 24,
+                            ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // NAME FIELD
-          TextField(
-            controller: nameController,
-            decoration:
-                const InputDecoration(
-              labelText: 'Name',
-              hintText: 'Your full name',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(
-                Icons.person_outline,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // USERNAME FIELD
-          TextField(
-            controller: usernameController,
-            decoration:
-                const InputDecoration(
-              labelText: 'Username',
-              hintText: 'e.g. john_doe',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(
-                Icons.alternate_email,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // BIO
-          TextField(
-            controller: bioController,
-            maxLines: 3,
-            decoration:
-                const InputDecoration(
-              labelText: 'Bio',
-              hintText:
-                  'Tell something about yourself',
-              border:
-                  OutlineInputBorder(),
-              prefixIcon: Icon(
-                Icons.info_outline,
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // SAVE BUTTON
-          SizedBox(
-            height: 50,
-            child: ElevatedButton(
-              onPressed:
-                  isSaving
-                      ? null
-                      : updateProfile,
-              child: isSaving
-                  ? const SizedBox(
-                      height: 22,
-                      width: 22,
-                      child:
-                          CircularProgressIndicator(
-                        strokeWidth: 2,
                       ),
-                    )
-                  : const Text(
-                      'Save Profile',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-            ),
-          ),
-
-          const SizedBox(height: 30),
-
-          // USER DETAILS
-          Card(
-            child: Padding(
-              padding:
-                  const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading:
-                        const Icon(
-                      Icons.person_outline,
-                    ),
-                    title:
-                        const Text(
-                      'Name',
-                      style:
-                          TextStyle(
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                    subtitle:
-                        Text(
-                      name?.isNotEmpty ==
-                              true
-                          ? name!
-                          : 'Not set',
-                    ),
-                  ),
-
-                  const Divider(),
-
-                  ListTile(
-                    leading:
-                        const Icon(
-                      Icons.alternate_email,
-                    ),
-                    title:
-                        const Text(
-                      'Username',
-                      style:
-                          TextStyle(
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                    subtitle:
-                        Text(
-                      username ??
-                          'Not set',
-                    ),
-                  ),
-
-                  const Divider(),
-
-                  ListTile(
-                    leading:
-                        const Icon(
-                      Icons.email_outlined,
-                    ),
-                    title:
-                        const Text(
-                      'Email',
-                      style:
-                          TextStyle(
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                    subtitle:
-                        Text(
-                      email ??
-                          'Not set',
-                    ),
-                  ),
-
-                  const Divider(),
-
-                  ListTile(
-                    leading:
-                        const Icon(
-                      Icons.info_outline,
-                    ),
-                    title:
-                        const Text(
-                      'Bio',
-                      style:
-                          TextStyle(
-                        fontWeight:
-                            FontWeight.bold,
-                      ),
-                    ),
-                    subtitle:
-                        Text(
-                      bio?.isNotEmpty ==
-                              true
-                          ? bio!
-                          : 'Not set',
-                    ),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
 
-          const SizedBox(height: 30),
-
-          // MY POSTS GRID
-          const Text(
-            'My Posts',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-
-          const SizedBox(height: 15),
-
-          if (isPostsLoading)
-            const Center(
+          // ── Posts Grid or Tagged Empty State ──
+          if (_selectedTab == 1)
+            SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.all(20),
-                child: CircularProgressIndicator(),
+                padding: const EdgeInsets.symmetric(vertical: 60),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Icon(Icons.assignment_ind_outlined, size: 54, color: Colors.grey[600]),
+                      const SizedBox(height: 12),
+                      Text('Photos and videos of you', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
+                      const SizedBox(height: 6),
+                      Text("When people tag you in photos and videos,\nthey'll appear here.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                    ],
+                  ),
+                ),
               ),
             )
+          else if (isPostsLoading)
+            const SliverFillRemaining(
+              child: Center(child: CircularProgressIndicator()),
+            )
           else if (myPosts.isEmpty)
-            const Center(
+            SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.all(30),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.photo_library_outlined,
-                      size: 60,
-                    ),
-                    SizedBox(height: 10),
-                    Text(
-                      'No posts yet',
-                      style: TextStyle(
-                        fontSize: 16,
+                padding: const EdgeInsets.symmetric(vertical: 60),
+                child: Center(
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: isDark ? Colors.white : Colors.black, width: 2),
+                        ),
+                        child: Icon(Icons.camera_alt_outlined, size: 36, color: isDark ? Colors.white : Colors.black),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      Text('Profile Photos', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: isDark ? Colors.white : Colors.black)),
+                      const SizedBox(height: 8),
+                      Text('When you share photos, they will appear on your profile.', style: TextStyle(color: Colors.grey[500], fontSize: 14)),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () async {
+                          final created = await Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const CreatePostPage()),
+                          );
+                          if (created == true) loadMyPosts();
+                        },
+                        child: const Text('Share your first photo', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF3797EF))),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             )
           else
-            GridView.builder(
-              shrinkWrap: true,
-              physics:
-                  const NeverScrollableScrollPhysics(),
-              itemCount: myPosts.length,
-              gridDelegate:
-                  const SliverGridDelegateWithFixedCrossAxisCount(
+            SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 3,
-                crossAxisSpacing: 3,
-                mainAxisSpacing: 3,
+                crossAxisSpacing: 1.5,
+                mainAxisSpacing: 1.5,
               ),
-              itemBuilder: (context, index) {
-                final post = myPosts[index];
-
-                final imageUrl = post['imageUrl'];
-
-                Widget tile;
-
-                if (imageUrl == null ||
-                    imageUrl.toString().isEmpty) {
-                  tile = Container(
-                    color: Colors.grey[300],
-                    child: const Icon(
-                      Icons.image_not_supported_outlined,
-                    ),
-                  );
-                } else {
-                  tile = Hero(
-                    tag: 'post-${post['id']}',
-                    child: Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder:
-                          (context, error, stackTrace) {
-                        return Container(
-                          color: Colors.grey[300],
-                          child: const Icon(
-                            Icons.broken_image_outlined,
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                }
-
-                return GestureDetector(
-                  onTap: () async {
-                    final result =
-                        await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            PostDetailPage(
-                          post: post,
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final post = myPosts[index];
+                  final imageUrl = post['imageUrl'];
+                  return GestureDetector(
+                    onTap: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PostDetailPage(post: post),
                         ),
-                      ),
-                    );
-
-                    if (result == 'deleted') {
-                      loadMyPosts();
-                    }
-                  },
-                  child: tile,
-                );
-              },
+                      );
+                      if (result == 'deleted') loadMyPosts();
+                    },
+                    child: imageUrl != null && imageUrl.toString().isNotEmpty
+                        ? Image.network(imageUrl, fit: BoxFit.cover)
+                        : Container(
+                            color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEAEAEA),
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Text(
+                                  post['title'] ?? post['content'] ?? '',
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : Colors.grey[700]),
+                                ),
+                              ),
+                            ),
+                          ),
+                  );
+                },
+                childCount: myPosts.length,
+              ),
             ),
         ],
       ),
@@ -2964,6 +3313,9 @@ class _PostDetailPageState
                         onPressed: isSaving
                             ? null
                             : () async {
+                                // Capture before async
+                                final sheetNav = Navigator.of(sheetCtx);
+                                final sheetMsg = ScaffoldMessenger.of(sheetCtx);
                                 setSheetState(
                                   () =>
                                       isSaving =
@@ -3014,12 +3366,8 @@ class _PostDetailPageState
                                     );
 
                                     if (mounted) {
-                                      Navigator.pop(
-                                        sheetCtx,
-                                      );
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      sheetNav.pop();
+                                      sheetMsg.showSnackBar(
                                         const SnackBar(
                                           content:
                                               Text(

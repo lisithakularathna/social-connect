@@ -3,6 +3,10 @@ import { AuthService } from './auth.service.js';
 import { RegisterDto } from './dto/register.dto/register.dto.js';
 import { LoginDto } from './dto/login.dto/login.dto.js';
 
+class GoogleLoginDto {
+  idToken: string;
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -22,6 +26,11 @@ export class AuthController {
     return this.authService.login(
       loginDto.email,
       loginDto.password,
-  );
-}
+    );
+  }
+
+  @Post('google')
+  googleLogin(@Body() body: GoogleLoginDto) {
+    return this.authService.googleLogin(body.idToken);
+  }
 }

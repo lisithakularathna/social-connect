@@ -1,7 +1,14 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { OAuth2Client } from 'google-auth-library';
 import { db } from '../prisma/db.js';
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 @Injectable()
 export class AuthService {
@@ -71,6 +78,67 @@ export class AuthService {
 
     return {
       message: 'Login successful',
+      accessToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+      },
+    };
+  }
+
+  async googleLogin(idToken: string) {
+    // Google ID Token verify කිරීම
+    let ticket;
+    try {
+      ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email) {
+      throw new UnauthorizedException('Google token payload invalid');
+    }
+
+    const { email, name, sub: googleId } = payload;
+
+    // User දැනටමත් තිබෙනවාද check කිරීම
+    let users = await db.orm.public.User
+      .where({ email })
+      .all();
+
+    let user;
+
+    if (users.length === 0) {
+      // නව user auto-register කිරීම
+      const username = email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '') +
+        '_' + Math.random().toString(36).slice(2, 6);
+
+      user = await db.orm.public.User.create({
+        email,
+        username,
+        name: name ?? username,
+        password: await bcrypt.hash(googleId + '_google_oauth', 10),
+      });
+    } else {
+      user = users[0];
+    }
+
+    const jwtPayload = {
+      sub: user.id,
+      email: user.email,
+      username: user.username,
+    };
+
+    const accessToken = await this.jwtService.signAsync(jwtPayload);
+
+    return {
+      message: 'Google login successful',
       accessToken,
       user: {
         id: user.id,

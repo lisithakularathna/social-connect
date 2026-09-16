@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UploadedFile,
   UseGuards,
@@ -46,8 +47,16 @@ export class PostsController {
   }
 
   @Get()
-  async getAllPosts(@Request() request: any) {
-    return this.postsService.getAllPosts(request.user?.sub);
+  async getAllPosts(
+    @Request() request: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.postsService.getAllPosts(
+      request.user?.sub,
+      page !== undefined ? parseInt(page, 10) : undefined,
+      limit !== undefined ? parseInt(limit, 10) : undefined,
+    );
   }
 
   @Get('me')
