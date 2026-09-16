@@ -105,6 +105,10 @@ export class AuthService {
       throw new UnauthorizedException('Google token payload invalid');
     }
 
+    if (!payload.email_verified) {
+      throw new UnauthorizedException('Google email is not verified');
+    }
+
     const { email, name, sub: googleId } = payload;
 
     // User දැනටමත් තිබෙනවාද check කිරීම

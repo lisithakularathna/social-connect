@@ -70,6 +70,7 @@ flutter run
 |---|---|---|
 | `POST` | `/auth/register` | Register new user account |
 | `POST` | `/auth/login` | Log in and receive JWT token |
+| `POST` | `/auth/google` | Sign in with Google ID token |
 | `GET` | `/users/me` | Fetch authenticated user profile & stats |
 | `PATCH` | `/users/me` | Update name, username, bio, and avatar |
 | `GET` | `/users/search?q=:query` | Search users by keyword |
