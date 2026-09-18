@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import "./PostCard.css";
 
@@ -27,6 +28,7 @@ interface Props {
 }
 
 function PostCard({ post }: Props) {
+  const navigate = useNavigate();
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
 
@@ -116,14 +118,19 @@ function PostCard({ post }: Props) {
           {(post.author?.username || "U")[0].toUpperCase()}
         </div>
 
-        <div>
-          <strong>
+        <div style={{ flex: 1 }}>
+          <strong 
+            style={{ fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+            onClick={() => navigate(`/user/${post.authorId}`)}
+          >
             {post.author?.username || "User"}
           </strong>
 
-          <small>
-            {post.author?.name || ""}
-          </small>
+          {post.author?.name && (
+            <small>
+              {post.author.name}
+            </small>
+          )}
         </div>
       </div>
 
@@ -136,40 +143,58 @@ function PostCard({ post }: Props) {
       )}
 
       <div className="post-content">
-        <h3>{post.title}</h3>
-
-        {post.content && <p>{post.content}</p>}
-
         <button
           onClick={toggleLike}
           className={liked ? "like-btn liked" : "like-btn"}
         >
-          {liked ? "♥" : "♡"} {likeCount}
+          {liked ? "❤️" : "🤍"} <span style={{ fontSize: '14px', fontWeight: 600 }}>{likeCount}</span>
         </button>
 
+        <div style={{ marginTop: '8px' }}>
+          <strong 
+            style={{ fontSize: '14px', marginRight: '8px', cursor: 'pointer' }}
+            onClick={() => navigate(`/user/${post.authorId}`)}
+          >
+            {post.author?.username || "User"}
+          </strong>
+          <span style={{ fontSize: '14px' }}>{post.title}</span>
+        </div>
+
+        {post.content && (
+          <p style={{ marginTop: '4px' }}>{post.content}</p>
+        )}
+
         <div className="comments">
-          <h4>Comments</h4>
-
-          {comments.map((item) => (
-            <div key={item.id} className="comment">
-              <strong>
-                {item.username || item.name || "User"}
-              </strong>
-
-              <span>{item.content}</span>
+          {comments.length > 0 && (
+            <div style={{ marginBottom: '8px' }}>
+              {comments.map((item) => (
+                <div key={item.id} className="comment">
+                  <strong>
+                    {item.username || item.name || "User"}
+                  </strong>
+                  <span>{item.content}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
 
           <div className="comment-input">
             <input
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Write a comment..."
+              placeholder="Add a comment..."
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  addComment();
+                }
+              }}
             />
 
-            <button onClick={addComment}>
-              Send
-            </button>
+            {comment.trim() && (
+              <button onClick={addComment}>
+                Post
+              </button>
+            )}
           </div>
         </div>
       </div>
