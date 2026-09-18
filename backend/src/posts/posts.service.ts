@@ -72,7 +72,7 @@ export class PostsService {
             byMe: likes.where((l) => l.userId.eq(likerId)).count(),
           }),
         )
-        .include('comments', (comments) => comments.count())
+        .include('comments', (comments) => comments.combine({ total: comments.count() }))
         .orderBy([(p) => p.createdAt.desc(), (p) => p.id.desc()])
         .limit(safeLimit)
         .offset(offset)
@@ -93,7 +93,7 @@ export class PostsService {
         updatedAt: post.updatedAt,
         likesCount: post.likes.total,
         isLiked: post.likes.byMe > 0,
-        commentsCount: post.comments,
+        commentsCount: post.comments.total,
         author: {
           id: post.author.id,
           username: post.author.username,
