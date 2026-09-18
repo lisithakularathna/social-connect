@@ -849,7 +849,6 @@ class _HomePageState extends State<HomePage> {
           currentIndex: _currentNavIndex == 2 ? 0 : _currentNavIndex,
           onTap: (index) async {
             if (index == 2) {
-              // Add post
               final created = await Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -859,6 +858,17 @@ class _HomePageState extends State<HomePage> {
               if (created == true) loadPosts();
               return;
             }
+
+            if (index == 4) {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const MessagesPage(),
+                ),
+              );
+              return;
+            }
+
             setState(() => _currentNavIndex = index);
             if (index == 3) loadUnreadNotifications();
           },
@@ -887,6 +897,11 @@ class _HomePageState extends State<HomePage> {
                   : const Icon(Icons.favorite_outline),
               activeIcon: const Icon(Icons.favorite),
               label: 'Notifications',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.chat_bubble_outline_rounded),
+              activeIcon: Icon(Icons.chat_bubble_rounded),
+              label: 'Messages',
             ),
             const BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),
