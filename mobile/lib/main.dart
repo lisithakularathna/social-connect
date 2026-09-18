@@ -48,7 +48,7 @@ Future<void> handleGoogleSignIn(BuildContext context) async {
 
   try {
     final response = await http.post(
-      Uri.parse('http://10.0.2.2:3000/auth/google'),
+      Uri.parse('$apiBaseUrl/auth/google'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'idToken': idToken}),
     );
@@ -333,7 +333,7 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:3000/auth/login'),
+        Uri.parse('$apiBaseUrl/auth/login'),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -669,7 +669,7 @@ class _HomePageState extends State<HomePage> {
       if (token == null) return;
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:3000/notifications/unread-count'),
+        Uri.parse('$apiBaseUrl/notifications/unread-count'),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -711,7 +711,7 @@ class _HomePageState extends State<HomePage> {
       }
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:3000/posts'),
+        Uri.parse('$apiBaseUrl/posts'),
         headers: {
           'Authorization': 'Bearer $token',
         },
@@ -1040,12 +1040,12 @@ class _PostCardState extends State<PostCard>
 
       if (isLiked) {
         response = await http.delete(
-          Uri.parse('http://10.0.2.2:3000/likes/$postId'),
+          Uri.parse('$apiBaseUrl/likes/$postId'),
           headers: {'Authorization': 'Bearer $token'},
         );
       } else {
         response = await http.post(
-          Uri.parse('http://10.0.2.2:3000/likes/$postId'),
+          Uri.parse('$apiBaseUrl/likes/$postId'),
           headers: {'Authorization': 'Bearer $token'},
         );
       }
@@ -1422,7 +1422,7 @@ class _CommentsPageState extends State<CommentsPage> {
 
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:3000/comments/${widget.postId}',
+          '$apiBaseUrl/comments/${widget.postId}',
         ),
         headers: {
           'Authorization': 'Bearer $token',
@@ -1472,7 +1472,7 @@ class _CommentsPageState extends State<CommentsPage> {
 
       final response = await http.post(
         Uri.parse(
-          'http://10.0.2.2:3000/comments/${widget.postId}',
+          '$apiBaseUrl/comments/${widget.postId}',
         ),
         headers: {
           'Authorization': 'Bearer $token',
@@ -1537,7 +1537,7 @@ class _CommentsPageState extends State<CommentsPage> {
       if (token == null) return;
 
       final response = await http.delete(
-        Uri.parse('http://10.0.2.2:3000/comments/$commentId'),
+        Uri.parse('$apiBaseUrl/comments/$commentId'),
         headers: {
           'Authorization': 'Bearer $token',
         },
@@ -1920,7 +1920,7 @@ class _RegisterPageState extends State<RegisterPage> {
     try {
       final response = await http.post(
         Uri.parse(
-          'http://10.0.2.2:3000/auth/register',
+          '$apiBaseUrl/auth/register',
         ),
         headers: {
           'Content-Type': 'application/json',
@@ -2307,7 +2307,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:3000/users/me',
+          '$apiBaseUrl/users/me',
         ),
         headers: {
           'Authorization': 'Bearer $token',
@@ -2365,7 +2365,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:3000/posts/me',
+          '$apiBaseUrl/posts/me',
         ),
         headers: {
           'Authorization': 'Bearer $token',
@@ -2430,7 +2430,7 @@ class _ProfilePageState extends State<ProfilePage> {
           http.MultipartRequest(
         'PATCH',
         Uri.parse(
-          'http://10.0.2.2:3000/users/me',
+          '$apiBaseUrl/users/me',
         ),
       );
 
@@ -3346,7 +3346,7 @@ class _PostDetailPageState
                                       await http
                                           .patch(
                                     Uri.parse(
-                                      'http://10.0.2.2:3000/posts/${post['id']}',
+                                      '$apiBaseUrl/posts/${post['id']}',
                                     ),
                                     headers: {
                                       'Authorization':
@@ -3506,7 +3506,7 @@ class _PostDetailPageState
                       final res =
                           await http.delete(
                         Uri.parse(
-                          'http://10.0.2.2:3000/posts/${post['id']}',
+                          '$apiBaseUrl/posts/${post['id']}',
                         ),
                         headers: {
                           'Authorization':
@@ -3752,7 +3752,7 @@ class _SearchPageState extends State<SearchPage> {
 
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:3000/users/search?q=$encoded',
+          '$apiBaseUrl/users/search?q=$encoded',
         ),
         headers: {
           'Authorization': 'Bearer $token',
@@ -4044,7 +4044,7 @@ class _UserProfilePageState
 
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:3000/users/${widget.userId}',
+          '$apiBaseUrl/users/${widget.userId}',
         ),
         headers: {
           'Authorization': 'Bearer $token',
@@ -4087,7 +4087,7 @@ class _UserProfilePageState
 
       final response = await http.post(
         Uri.parse(
-          'http://10.0.2.2:3000/users/${widget.userId}/follow',
+          '$apiBaseUrl/users/${widget.userId}/follow',
         ),
         headers: {
           'Authorization': 'Bearer $token',
@@ -4147,7 +4147,7 @@ class _UserProfilePageState
 
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:3000/posts/user/${widget.userId}',
+          '$apiBaseUrl/posts/user/${widget.userId}',
         ),
         headers: {
           'Authorization': 'Bearer $token',
@@ -4617,7 +4617,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (token == null) return;
 
       final response = await http.get(
-        Uri.parse('http://10.0.2.2:3000/notifications'),
+        Uri.parse('$apiBaseUrl/notifications'),
         headers: {
           'Authorization': 'Bearer $token',
         },
@@ -4649,7 +4649,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (token == null) return;
 
       final response = await http.patch(
-        Uri.parse('http://10.0.2.2:3000/notifications/read-all'),
+        Uri.parse('$apiBaseUrl/notifications/read-all'),
         headers: {
           'Authorization': 'Bearer $token',
         },
@@ -4678,7 +4678,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       if (token == null) return;
 
       await http.patch(
-        Uri.parse('http://10.0.2.2:3000/notifications/$id/read'),
+        Uri.parse('$apiBaseUrl/notifications/$id/read'),
         headers: {
           'Authorization': 'Bearer $token',
         },
@@ -4935,7 +4935,7 @@ class _UserListPageState extends State<UserListPage> {
 
       final response = await http.get(
         Uri.parse(
-          'http://10.0.2.2:3000/users/${widget.userId}/${widget.endpoint}',
+          '$apiBaseUrl/users/${widget.userId}/${widget.endpoint}',
         ),
         headers: {
           if (token != null) 'Authorization': 'Bearer $token',
@@ -5268,7 +5268,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('http://10.0.2.2:3000/posts'),
+        Uri.parse('$apiBaseUrl/posts'),
       );
 
       request.headers['Authorization'] = 'Bearer $token';
