@@ -29,6 +29,8 @@ model Post {
   title     String
   content   String?
   imageUrl  String?
+  backgroundColor String?
+  fontSize Int?
   author    User     @relation(fields: [authorId], references: [id])
   authorId  Int
   likes     PostLike[]
