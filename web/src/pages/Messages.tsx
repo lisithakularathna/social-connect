@@ -1,8 +1,5 @@
-import { useEffect, useState } from "react";
-import {
-  useNavigate,
-  useParams,
-} from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
@@ -23,147 +20,106 @@ interface Message {
   createdAt: string;
 }
 
-interface Conversation {
-  user: User;
-  lastMessage: {
-    id: number;
-    content: string;
-    senderId: number;
-    createdAt: string;
-  };
-}
-
 function Messages() {
   const navigate = useNavigate();
+  const { userId } = useParams<{ userId?: string }>();
 
-  const { userId } = useParams<{
-    userId?: string;
-  }>();
+  const [followingUsers, setFollowingUsers] = useState<User[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [message, setMessage] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  const [conversations, setConversations] =
-    useState<Conversation[]>([]);
-
-  const [messages, setMessages] =
-    useState<Message[]>([]);
-
-  const [selectedUser, setSelectedUser] =
-    useState<User | null>(null);
-
-  const [message, setMessage] =
-    useState("");
-
-  const [currentUserId, setCurrentUserId] =
-    useState<number | null>(null);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const loadCurrentUser = async () => {
+  // Load current user + following list
+  const loadSidebar = async () => {
     try {
-      const response =
-        await api.get("/users/me");
+      const meRes = await api.get("/users/me");
+      const me: User = meRes.data;
+      setCurrentUserId(me.id);
 
-      setCurrentUserId(response.data.id);
-    } catch (error) {
-      console.error(error);
+      // Load people current user follows — API returns {id, username, name, profileImageUrl, followedAt}
+      const followRes = await api.get(`/follows/following/${me.id}`);
+      const followedUsers: User[] = (followRes.data || []).map((f: any) => ({
+        id: f.id,
+        username: f.username,
+        name: f.name,
+        profileImageUrl: f.profileImageUrl,
+      }));
+      setFollowingUsers(followedUsers);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const loadConversations = async () => {
+  // Load selected user info
+  const loadSelectedUser = async (id: number) => {
     try {
-      const response =
-        await api.get(
-          "/messages/conversations"
-        );
-
-      setConversations(response.data);
-    } catch (error) {
-      console.error(error);
+      const res = await api.get(`/users/${id}`);
+      setSelectedUser(res.data);
+    } catch (err) {
+      console.error(err);
     }
   };
 
-  const loadConversation = async (
-    id: number
-  ) => {
+  // Load messages for current conversation
+  const loadMessages = async (id: number) => {
     try {
-      const userResponse =
-        await api.get(`/users/${id}`);
-
-      setSelectedUser(userResponse.data);
-
-      const messagesResponse =
-        await api.get(`/messages/${id}`);
-
-      setMessages(messagesResponse.data);
-    } catch (error: any) {
-      console.error(error);
-
-      alert(
-        error.response?.data?.message ||
-          "Cannot open this conversation."
-      );
+      const res = await api.get(`/messages/${id}`);
+      setMessages(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setMessages([]);
     }
   };
 
   const sendMessage = async () => {
-    if (!userId || !message.trim()) {
-      return;
-    }
-
+    if (!userId || !message.trim() || sending) return;
+    setSending(true);
     try {
-      const response = await api.post(
-        `/messages/${userId}`,
-        {
-          content: message,
-        }
-      );
-
-      setMessages((current) => [
-        ...current,
-        response.data,
-      ]);
-
+      const res = await api.post(`/messages/${userId}`, { content: message });
+      setMessages((prev) => [...prev, res.data]);
       setMessage("");
-
-      await loadConversations();
-    } catch (error: any) {
-      alert(
-        error.response?.data?.message ||
-          "Failed to send message."
-      );
+      setTimeout(() => {
+        chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 50);
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Failed to send message.");
+    } finally {
+      setSending(false);
     }
   };
 
+  // Initial load
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-
-      await Promise.all([
-        loadCurrentUser(),
-        loadConversations(),
-      ]);
-
-      setLoading(false);
-    };
-
-    load();
+    loadSidebar();
   }, []);
 
+  // When userId param changes, load that conversation
   useEffect(() => {
     if (userId) {
-      loadConversation(Number(userId));
+      loadSelectedUser(Number(userId));
+      loadMessages(Number(userId));
+    } else {
+      setSelectedUser(null);
+      setMessages([]);
     }
   }, [userId]);
 
+  // Poll messages every 3s when a conversation is open
   useEffect(() => {
     if (!userId) return;
-
-    const interval = setInterval(() => {
-      loadConversation(Number(userId));
-    }, 3000);
-
+    const interval = setInterval(() => loadMessages(Number(userId)), 3000);
     return () => clearInterval(interval);
   }, [userId]);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   return (
     <>
@@ -172,195 +128,125 @@ function Messages() {
       <main className="messages-page">
         <div className="messages-layout">
 
-          {/* Conversations */}
+          {/* Sidebar: Following list */}
           <aside className="conversation-sidebar">
             <div className="messages-title">
               <h1>Messages</h1>
             </div>
 
             {loading ? (
-              <div className="conversation-loading">
-                Loading...
-              </div>
-            ) : conversations.length === 0 ? (
+              <div className="conversation-loading">Loading...</div>
+            ) : followingUsers.length === 0 ? (
               <div className="conversation-empty">
                 <span>💬</span>
-                <p>
-                  No conversations yet.
-                </p>
+                <p>Follow people to start messaging!</p>
               </div>
             ) : (
-              conversations.map(
-                (conversation) => (
-                  <div
-                    key={conversation.user.id}
-                    className={`conversation-item ${
-                      userId ===
-                      String(
-                        conversation.user.id
-                      )
-                        ? "selected"
-                        : ""
-                    }`}
-                    onClick={() =>
-                      navigate(
-                        `/messages/${conversation.user.id}`
-                      )
-                    }
-                  >
-                    {conversation.user
-                      .profileImageUrl ? (
-                      <img
-                        src={
-                          conversation.user
-                            .profileImageUrl
-                        }
-                        alt=""
-                      />
-                    ) : (
-                      <div className="conversation-avatar">
-                        {(
-                          conversation.user
-                            .username ||
-                          "U"
-                        )[0].toUpperCase()}
-                      </div>
-                    )}
-
-                    <div>
-                      <strong>
-                        {conversation.user
-                          .username ||
-                          conversation.user
-                            .name}
-                      </strong>
-
-                      <p>
-                        {
-                          conversation.lastMessage
-                            .content
-                        }
-                      </p>
+              followingUsers.map((u) => (
+                <div
+                  key={u.id}
+                  className={`conversation-item ${userId === String(u.id) ? "selected" : ""}`}
+                  onClick={() => navigate(`/messages/${u.id}`)}
+                >
+                  {u.profileImageUrl ? (
+                    <img src={u.profileImageUrl} alt="" />
+                  ) : (
+                    <div className="conversation-avatar">
+                      {(u.username || u.name || "U")[0].toUpperCase()}
                     </div>
+                  )}
+                  <div>
+                    <strong>{u.username || u.name}</strong>
+                    <p style={{ color: "#8e8e8e", fontSize: 13, margin: "3px 0 0" }}>
+                      Tap to chat
+                    </p>
                   </div>
-                )
-              )
+                </div>
+              ))
             )}
           </aside>
 
-          {/* Chat */}
+          {/* Chat section */}
           <section className="chat-section">
             {!userId || !selectedUser ? (
               <div className="no-chat">
-                <div className="no-chat-icon">
-                  💬
-                </div>
-
+                <div className="no-chat-icon">💬</div>
                 <h2>Your Messages</h2>
-
-                <p>
-                  Select a conversation to start
-                  chatting.
-                </p>
+                <p>Select someone from the list to start chatting.</p>
               </div>
             ) : (
               <>
                 <header className="chat-header">
                   <button
                     className="chat-back"
-                    onClick={() =>
-                      navigate("/messages")
-                    }
+                    onClick={() => navigate("/messages")}
                   >
                     ←
                   </button>
 
                   {selectedUser.profileImageUrl ? (
-                    <img
-                      src={
-                        selectedUser.profileImageUrl
-                      }
-                      alt=""
-                    />
+                    <img src={selectedUser.profileImageUrl} alt="" />
                   ) : (
                     <div className="chat-avatar">
-                      {(
-                        selectedUser.username ||
-                        "U"
-                      )[0].toUpperCase()}
+                      {(selectedUser.username || "U")[0].toUpperCase()}
                     </div>
                   )}
 
                   <div>
-                    <strong>
-                      {selectedUser.username ||
-                        selectedUser.name}
+                    <strong
+                      style={{ cursor: "pointer" }}
+                      onClick={() => navigate(`/user/${selectedUser.id}`)}
+                    >
+                      {selectedUser.username || selectedUser.name}
                     </strong>
-
                     {selectedUser.name && (
-                      <small>
-                        {selectedUser.name}
-                      </small>
+                      <small>{selectedUser.name}</small>
                     )}
                   </div>
                 </header>
 
                 <div className="chat-messages">
+                  {messages.length === 0 && (
+                    <div style={{ textAlign: "center", color: "#8e8e8e", margin: "auto" }}>
+                      <p>No messages yet. Say hi! 👋</p>
+                    </div>
+                  )}
                   {messages.map((item) => {
-                    const mine =
-                      item.senderId ===
-                      currentUserId;
-
+                    const mine = item.senderId === currentUserId;
                     return (
                       <div
                         key={item.id}
-                        className={`message-row ${
-                          mine ? "mine" : "theirs"
-                        }`}
+                        className={`message-row ${mine ? "mine" : "theirs"}`}
                       >
                         <div className="message-bubble">
                           <p>{item.content}</p>
-
                           <small>
-                            {new Date(
-                              item.createdAt
-                            ).toLocaleTimeString(
-                              [],
-                              {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }
-                            )}
+                            {new Date(item.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
                           </small>
                         </div>
                       </div>
                     );
                   })}
+                  <div ref={chatBottomRef} />
                 </div>
 
                 <div className="message-input">
                   <input
                     value={message}
-                    onChange={(e) =>
-                      setMessage(e.target.value)
-                    }
+                    onChange={(e) => setMessage(e.target.value)}
                     onKeyDown={(e) => {
-                      if (
-                        e.key === "Enter" &&
-                        !e.shiftKey
-                      ) {
+                      if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         sendMessage();
                       }
                     }}
                     placeholder="Message..."
                   />
-
-                  <button
-                    onClick={sendMessage}
-                    disabled={!message.trim()}
-                  >
-                    Send
+                  <button onClick={sendMessage} disabled={!message.trim() || sending}>
+                    {sending ? "..." : "Send"}
                   </button>
                 </div>
               </>
