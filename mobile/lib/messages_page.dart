@@ -154,11 +154,13 @@ class _ChatPageState extends State<ChatPage> {
   int? currentUserId;
   bool loading = true;
   bool sending = false;
+  bool _sharedPostPending = false;
   String? error;
 
   @override
   void initState() {
     super.initState();
+    _sharedPostPending = widget.sharedPost != null;
     load();
   }
 
@@ -231,7 +233,7 @@ class _ChatPageState extends State<ChatPage> {
         Uri.parse('$apiBaseUrl/messages/${widget.userId}'),
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
         body: jsonEncode({
-          'content': widget.sharedPost == null
+          'content': !_sharedPostPending
               ? content
               : jsonEncode({
                   '__sharedPost__': true,
@@ -251,6 +253,7 @@ class _ChatPageState extends State<ChatPage> {
       }
 
       controller.clear();
+      if (mounted) setState(() => _sharedPostPending = false);
       await load();
     } catch (e) {
       if (mounted) {
