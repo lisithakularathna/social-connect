@@ -14,6 +14,7 @@ import UserProfile from "./pages/UserProfile";
 import Search from "./pages/Search";
 import Activity from "./pages/Activity";
 import Messages from "./pages/Messages";
+import Following from "./pages/Following";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -75,6 +76,11 @@ function App() {
               <Search />
             </ProtectedRoute>
           }
+        />
+
+        <Route
+          path="/following"
+          element={<ProtectedRoute><Following /></ProtectedRoute>}
         />
 
         <Route
