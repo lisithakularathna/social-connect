@@ -192,6 +192,14 @@ export class PostsService {
       updateData.fontSize = Math.min(Math.max(Math.round(fontSize), 16), 48);
     }
 
+    if (backgroundColor !== undefined) {
+      updateData.backgroundColor = backgroundColor;
+    }
+
+    if (fontSize !== undefined) {
+      updateData.fontSize = Math.min(Math.max(Math.round(fontSize), 16), 48);
+    }
+
     await db.orm.public.Post
       .where({ id: postId })
       .update(updateData);
