@@ -8,6 +8,8 @@ interface Post {
   title: string;
   content?: string;
   imageUrl?: string;
+  backgroundColor?: string;
+  fontSize?: number;
   authorId: number;
   author?: {
     username?: string;
@@ -31,6 +33,14 @@ function PostCard({ post }: Props) {
   const navigate = useNavigate();
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editTitle, setEditTitle] = useState(post.title);
+  const [editContent, setEditContent] = useState(post.content || "");
+  const [editBackground, setEditBackground] = useState(post.backgroundColor || "#F3F4F6");
+  const [editFontSize, setEditFontSize] = useState(post.fontSize || 22);
+  const [saving, setSaving] = useState(false);
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [comment, setComment] = useState("");
@@ -75,6 +85,36 @@ function PostCard({ post }: Props) {
     }
   };
 
+  const deletePost = async () => {
+    if (!window.confirm("Are you sure you want to delete this post?")) return;
+    try {
+      await api.delete(`/posts/${post.id}`);
+      window.dispatchEvent(new CustomEvent("post-deleted", { detail: post.id }));
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Failed to delete post");
+    }
+  };
+
+  const saveEdit = async () => {
+    try {
+      setSaving(true);
+      await api.patch(`/posts/${post.id}`, {
+        title: editTitle.trim(),
+        content: editContent.trim(),
+        backgroundColor: editBackground,
+        fontSize: editFontSize,
+      });
+      setShowEdit(false);
+      setShowMenu(false);
+      window.dispatchEvent(new Event("posts-changed"));
+      window.location.reload();
+    } catch (error: any) {
+      alert(error.response?.data?.message || "Failed to update post");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const toggleLike = async () => {
     try {
       if (liked) {
@@ -107,12 +147,24 @@ function PostCard({ post }: Props) {
   };
 
   useEffect(() => {
+    setCurrentUserId(getUserIdFromToken());
     loadLikes();
     loadComments();
   }, [post.id]);
 
   return (
     <article className="post-card">
+      {currentUserId === Number(post.authorId) && (
+        <div className="post-menu">
+          <button className="post-menu-button" onClick={() => setShowMenu((v) => !v)}>⋯</button>
+          {showMenu && (
+            <div className="post-menu-dropdown">
+              <button onClick={() => { setEditTitle(post.title); setEditContent(post.content || ""); setEditBackground(post.backgroundColor || "#F3F4F6"); setEditFontSize(post.fontSize || 22); setShowEdit(true); setShowMenu(false); }}>Edit</button>
+              <button className="delete-action" onClick={deletePost}>Delete</button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="post-header">
         <div className="avatar">
           {(post.author?.username || "U")[0].toUpperCase()}
@@ -133,6 +185,12 @@ function PostCard({ post }: Props) {
           )}
         </div>
       </div>
+
+      {!post.imageUrl ? (
+        <div className="text-post-content" style={{ backgroundColor: post.backgroundColor || "#F3F4F6", color: (post.backgroundColor || "") === "#111827" ? "#fff" : "#111827", fontSize: post.fontSize || 22 }}>
+          {post.title}
+        </div>
+      ) : null}
 
       {post.imageUrl && (
         <img
@@ -198,6 +256,35 @@ function PostCard({ post }: Props) {
           </div>
         </div>
       </div>
+
+      {showEdit && (
+        <div className="edit-overlay" onClick={() => !saving && setShowEdit(false)}>
+          <div className="edit-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="edit-header">
+              <h2>Edit Post</h2>
+              <button onClick={() => !saving && setShowEdit(false)}>×</button>
+            </div>
+            <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="Post title" />
+            <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} placeholder="Write something..." />
+            {!post.imageUrl && (
+              <>
+                <label>Background</label>
+                <div className="edit-colors">
+                  {["#F3F4F6","#FFF3E0","#FFE4E6","#E0F2FE","#DCFCE7","#EDE9FE","#FFF7ED","#111827"].map((color) => (
+                    <button key={color} type="button" className={editBackground === color ? "edit-color selected" : "edit-color"} style={{backgroundColor: color}} onClick={() => setEditBackground(color)} />
+                  ))}
+                </div>
+                <label>Font size: {editFontSize}px</label>
+                <input type="range" min="16" max="40" value={editFontSize} onChange={(e) => setEditFontSize(Number(e.target.value))} />
+              </>
+            )}
+            <div className="edit-actions">
+              <button className="cancel-edit" onClick={() => !saving && setShowEdit(false)}>Cancel</button>
+              <button className="save-edit" disabled={saving || !editTitle.trim()} onClick={saveEdit}>{saving ? "Saving..." : "Save Changes"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
