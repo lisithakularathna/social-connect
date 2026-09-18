@@ -91,7 +91,29 @@ Future<void> handleGoogleSignIn(BuildContext context) async {
 final ValueNotifier<ThemeMode> themeNotifier =
     ValueNotifier(ThemeMode.light);
 
-void main() {
+Future<void> loadThemePreference() async {
+  final prefs = await SharedPreferences.getInstance();
+  final value = prefs.getString('themeMode') ?? 'light';
+  themeNotifier.value = value == 'dark'
+      ? ThemeMode.dark
+      : value == 'system'
+          ? ThemeMode.system
+          : ThemeMode.light;
+}
+
+Future<void> setThemePreference(ThemeMode mode) async {
+  themeNotifier.value = mode;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('themeMode', mode == ThemeMode.dark
+      ? 'dark'
+      : mode == ThemeMode.system
+          ? 'system'
+          : 'light');
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await loadThemePreference();
   runApp(const SocialConnectApp());
 }
 
@@ -2366,6 +2388,294 @@ class _RegisterPageState extends State<RegisterPage> {
 }
 
 
+// ======================================================
+// SETTINGS
+// ======================================================
+
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  bool likes = true;
+  bool comments = true;
+  bool followers = true;
+  bool messages = true;
+  bool mentions = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotificationSettings();
+  }
+
+  Future<void> _loadNotificationSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      likes = prefs.getBool('notif_likes') ?? true;
+      comments = prefs.getBool('notif_comments') ?? true;
+      followers = prefs.getBool('notif_followers') ?? true;
+      messages = prefs.getBool('notif_messages') ?? true;
+      mentions = prefs.getBool('notif_mentions') ?? true;
+    });
+  }
+
+  Future<void> _setNotification(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
+  }
+
+  void _openThemeSettings() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return ValueListenableBuilder<ThemeMode>(
+          valueListenable: themeNotifier,
+          builder: (context, mode, _) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Appearance', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 8),
+                    const Text('Choose how Social Connect looks on your device.', style: TextStyle(color: Colors.grey)),
+                    const SizedBox(height: 12),
+                    RadioListTile<ThemeMode>(
+                      value: ThemeMode.light,
+                      groupValue: mode,
+                      title: const Text('Light'),
+                      secondary: const Icon(Icons.light_mode_outlined),
+                      onChanged: (value) async {
+                        await setThemePreference(value!);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
+                      },
+                    ),
+                    RadioListTile<ThemeMode>(
+                      value: ThemeMode.dark,
+                      groupValue: mode,
+                      title: const Text('Dark'),
+                      secondary: const Icon(Icons.dark_mode_outlined),
+                      onChanged: (value) async {
+                        await setThemePreference(value!);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
+                      },
+                    ),
+                    RadioListTile<ThemeMode>(
+                      value: ThemeMode.system,
+                      groupValue: mode,
+                      title: const Text('System default'),
+                      secondary: const Icon(Icons.brightness_auto_outlined),
+                      onChanged: (value) async {
+                        await setThemePreference(value!);
+                        if (sheetContext.mounted) Navigator.pop(sheetContext);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _settingTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    VoidCallback? onTap,
+  }) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      leading: Icon(icon),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: subtitle == null ? null : Text(subtitle),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
+    );
+  }
+
+  void _openNotificationSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotificationSettingsPage(
+          likes: likes,
+          comments: comments,
+          followers: followers,
+          messages: messages,
+          mentions: mentions,
+        ),
+      ),
+    ).then((_) => _loadNotificationSettings());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = themeNotifier.value;
+    final themeName = mode == ThemeMode.dark ? 'Dark' : mode == ThemeMode.system ? 'System' : 'Light';
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings'), centerTitle: true),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: [
+          const Text('Preferences', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.grey)),
+          const SizedBox(height: 6),
+          _settingTile(
+            icon: Icons.brightness_6_outlined,
+            title: 'Theme',
+            subtitle: themeName,
+            onTap: _openThemeSettings,
+          ),
+          _settingTile(
+            icon: Icons.notifications_none_rounded,
+            title: 'Notification Settings',
+            subtitle: 'Likes, comments, followers, messages and mentions',
+            onTap: _openNotificationSettings,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class NotificationSettingsPage extends StatefulWidget {
+  final bool likes;
+  final bool comments;
+  final bool followers;
+  final bool messages;
+  final bool mentions;
+
+  const NotificationSettingsPage({
+    super.key,
+    required this.likes,
+    required this.comments,
+    required this.followers,
+    required this.messages,
+    required this.mentions,
+  });
+
+  @override
+  State<NotificationSettingsPage> createState() => _NotificationSettingsPageState();
+}
+
+class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
+  late bool likes;
+  late bool comments;
+  late bool followers;
+  late bool messages;
+  late bool mentions;
+
+  @override
+  void initState() {
+    super.initState();
+    likes = widget.likes;
+    comments = widget.comments;
+    followers = widget.followers;
+    messages = widget.messages;
+    mentions = widget.mentions;
+  }
+
+  Future<void> _change(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Notifications'), centerTitle: true),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: [
+          const Text('Push notifications', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.grey)),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            title: const Text('Likes'),
+            subtitle: const Text('When someone likes your post'),
+            value: likes,
+            onChanged: (v) { setState(() => likes = v); _change('notif_likes', v); },
+          ),
+          SwitchListTile(
+            title: const Text('Comments'),
+            subtitle: const Text('When someone comments on your post'),
+            value: comments,
+            onChanged: (v) { setState(() => comments = v); _change('notif_comments', v); },
+          ),
+          SwitchListTile(
+            title: const Text('New followers'),
+            subtitle: const Text('When someone follows you'),
+            value: followers,
+            onChanged: (v) { setState(() => followers = v); _change('notif_followers', v); },
+          ),
+          SwitchListTile(
+            title: const Text('Messages'),
+            subtitle: const Text('New direct messages'),
+            value: messages,
+            onChanged: (v) { setState(() => messages = v); _change('notif_messages', v); },
+          ),
+          SwitchListTile(
+            title: const Text('Mentions'),
+            subtitle: const Text('When someone mentions you'),
+            value: mentions,
+            onChanged: (v) { setState(() => mentions = v); _change('notif_mentions', v); },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _openThemeSettingsFromProfile(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    builder: (sheetContext) => ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, mode, _) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('Theme', style: TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text('Choose Light, Dark or System'),
+            ),
+            RadioListTile<ThemeMode>(
+              value: ThemeMode.light,
+              groupValue: mode,
+              title: const Text('Light'),
+              onChanged: (v) async { await setThemePreference(v!); if (sheetContext.mounted) Navigator.pop(sheetContext); },
+            ),
+            RadioListTile<ThemeMode>(
+              value: ThemeMode.dark,
+              groupValue: mode,
+              title: const Text('Dark'),
+              onChanged: (v) async { await setThemePreference(v!); if (sheetContext.mounted) Navigator.pop(sheetContext); },
+            ),
+            RadioListTile<ThemeMode>(
+              value: ThemeMode.system,
+              groupValue: mode,
+              title: const Text('System'),
+              onChanged: (v) async { await setThemePreference(v!); if (sheetContext.mounted) Navigator.pop(sheetContext); },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -2842,10 +3152,10 @@ class _ProfilePageState extends State<ProfilePage> {
           PopupMenuButton<String>(
             icon: Icon(Icons.menu_rounded, color: isDark ? Colors.white : Colors.black),
             onSelected: (val) async {
-              if (val == 'theme') {
-                themeNotifier.value = themeNotifier.value == ThemeMode.light
-                    ? ThemeMode.dark
-                    : ThemeMode.light;
+              if (val == 'settings') {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
+              } else if (val == 'theme') {
+                _openThemeSettingsFromProfile(context);
               } else if (val == 'logout') {
                 final prefs = await SharedPreferences.getInstance();
                 await prefs.remove('accessToken');
@@ -2858,18 +3168,51 @@ class _ProfilePageState extends State<ProfilePage> {
               }
             },
             itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.settings_outlined, size: 20),
+                    SizedBox(width: 10),
+                    Text('Settings'),
+                  ],
+                ),
+              ),
               PopupMenuItem(
                 value: 'theme',
                 child: Row(
                   children: [
                     Icon(
-                      themeNotifier.value == ThemeMode.light ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+                      themeNotifier.value == ThemeMode.light
+                          ? Icons.dark_mode_outlined
+                          : themeNotifier.value == ThemeMode.dark
+                              ? Icons.light_mode_outlined
+                              : Icons.brightness_auto_outlined,
                       size: 20,
                     ),
                     const SizedBox(width: 10),
-                    Text(themeNotifier.value == ThemeMode.light ? 'Dark mode' : 'Light mode'),
+                    Text(
+                      themeNotifier.value == ThemeMode.system
+                          ? 'System theme'
+                          : themeNotifier.value == ThemeMode.light
+                              ? 'Dark mode'
+                              : 'Light mode',
+                    ),
                   ],
                 ),
+              ),
+              const PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 20, color: Colors.redAccent),
+                    SizedBox(width: 10),
+                    Text('Log out', style: TextStyle(color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+            ],
+          )
               ),
               const PopupMenuItem(
                 value: 'logout',
