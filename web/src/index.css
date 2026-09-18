@@ -1540,3 +1540,67 @@ button {
 .following-empty h2{color:#262626}
 .following-empty button{margin-top:15px;border:none;background:#0095f6;color:white;padding:9px 18px;border-radius:8px;font-weight:600}
 @media(max-width:700px){.top-create-btn{padding:6px 10px;font-size:13px}.top-nav-actions{gap:4px}.following-page{padding-top:25px}}
+
+/* Following management */
+.following-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.following-user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 8px;
+  border-bottom: 1px solid #efefef;
+}
+
+.following-user-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+}
+
+.following-manage-btn {
+  flex-shrink: 0;
+  min-width: 96px;
+  border: 1px solid #dbdbdb;
+  background: white;
+  color: #262626;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.following-manage-btn:hover {
+  background: #f5f5f5;
+}
+
+.following-manage-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+@media (max-width: 700px) {
+  .following-page {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .following-user {
+    gap: 10px;
+  }
+
+  .following-manage-btn {
+    min-width: 88px;
+    padding: 7px 9px;
+    font-size: 13px;
+  }
+}
