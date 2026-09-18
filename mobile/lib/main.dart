@@ -246,6 +246,58 @@ class SocialConnectApp extends StatelessWidget {
 // HELPER: TIME AGO FORMATTER
 // ======================================================
 
+
+// ======================================================
+// SAVED POSTS
+// ======================================================
+
+const String _savedPostsKey = 'savedPosts';
+
+Future<List<Map<String, dynamic>>> loadSavedPosts() async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getStringList(_savedPostsKey) ?? [];
+  final result = <Map<String, dynamic>>[];
+
+  for (final item in raw) {
+    try {
+      final decoded = jsonDecode(item);
+      if (decoded is Map) {
+        result.add(Map<String, dynamic>.from(decoded));
+      }
+    } catch (_) {}
+  }
+
+  return result;
+}
+
+Future<bool> isPostSaved(dynamic postId) async {
+  final posts = await loadSavedPosts();
+  return posts.any((p) => p['id'].toString() == postId.toString());
+}
+
+Future<bool> toggleSavedPost(dynamic post) async {
+  final prefs = await SharedPreferences.getInstance();
+  final posts = await loadSavedPosts();
+  final postId = post['id'].toString();
+  final index = posts.indexWhere((p) => p['id'].toString() == postId);
+
+  if (index >= 0) {
+    posts.removeAt(index);
+    await prefs.setStringList(
+      _savedPostsKey,
+      posts.map((p) => jsonEncode(p)).toList(),
+    );
+    return false;
+  }
+
+  posts.insert(0, Map<String, dynamic>.from(post));
+  await prefs.setStringList(
+    _savedPostsKey,
+    posts.map((p) => jsonEncode(p)).toList(),
+  );
+  return true;
+}
+
 String formatTimeAgo(dynamic dateValue) {
   if (dateValue == null) return '';
   try {
@@ -1008,6 +1060,8 @@ class _PostCardState extends State<PostCard>
   bool isLiked = false;
   bool isLoadingLike = false;
   int likeCount = 0;
+  bool isSaved = false;
+  bool isLoadingSave = false;
   bool _showHeart = false;
   late AnimationController _heartController;
   late Animation<double> _heartAnim;
@@ -1018,6 +1072,7 @@ class _PostCardState extends State<PostCard>
     // Use data from backend response if available
     likeCount = widget.post['likesCount'] ?? 0;
     isLiked = widget.post['isLiked'] ?? false;
+    _loadSavedState();
 
     _heartController = AnimationController(
       vsync: this,
@@ -1039,6 +1094,29 @@ class _PostCardState extends State<PostCard>
   void dispose() {
     _heartController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadSavedState() async {
+    final saved = await isPostSaved(widget.post['id']);
+    if (mounted) setState(() => isSaved = saved);
+  }
+
+  Future<void> toggleSave() async {
+    if (isLoadingSave) return;
+
+    setState(() => isLoadingSave = true);
+    try {
+      final saved = await toggleSavedPost(widget.post);
+      if (mounted) {
+        setState(() => isSaved = saved);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(saved ? 'Post saved' : 'Post removed from saved')),
+        );
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => isLoadingSave = false);
+    }
   }
 
   Future<void> toggleLike() async {
@@ -1289,20 +1367,52 @@ class _PostCardState extends State<PostCard>
                 ),
                 const SizedBox(width: 4),
 
-                // Share
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  child: Icon(Icons.send_outlined,
-                      size: 24, color: isDark ? Colors.white : Colors.black),
+                // Message post author
+                GestureDetector(
+                  onTap: () {
+                    final authorId = author?['id'];
+                    if (authorId == null) return;
+
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ChatPage(
+                          userId: int.parse(authorId.toString()),
+                          username: username.toString(),
+                          profileImageUrl: authorPic?.toString(),
+                        ),
+                      ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: Icon(
+                      Icons.send_outlined,
+                      size: 24,
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                  ),
                 ),
 
                 const Spacer(),
 
-                // Bookmark
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  child: Icon(Icons.bookmark_border,
-                      size: 26, color: isDark ? Colors.white : Colors.black),
+                // Save
+                GestureDetector(
+                  onTap: isLoadingSave ? null : toggleSave,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: isLoadingSave
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            isSaved ? Icons.bookmark : Icons.bookmark_border,
+                            size: 26,
+                            color: isDark ? Colors.white : Colors.black,
+                          ),
+                  ),
                 ),
               ],
             ),
@@ -2274,7 +2384,9 @@ class _ProfilePageState extends State<ProfilePage> {
   int followingCount = 0;
 
   List<dynamic> myPosts = [];
+  List<dynamic> savedPosts = [];
   bool isPostsLoading = true;
+  bool isSavedPostsLoading = true;
 
   XFile? selectedImage;
 
@@ -2292,6 +2404,7 @@ class _ProfilePageState extends State<ProfilePage> {
     super.initState();
     loadProfile();
     loadMyPosts();
+    loadSavedPostsForProfile();
   }
 
   @override
@@ -2401,6 +2514,20 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() {
         isPostsLoading = false;
       });
+    }
+  }
+
+  Future<void> loadSavedPostsForProfile() async {
+    try {
+      final data = await loadSavedPosts();
+      if (mounted) {
+        setState(() {
+          savedPosts = data;
+          isSavedPostsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => isSavedPostsLoading = false);
     }
   }
 
@@ -2855,6 +2982,7 @@ class _ProfilePageState extends State<ProfilePage> {
       onRefresh: () async {
         await loadProfile();
         await loadMyPosts();
+        await loadSavedPostsForProfile();
       },
       child: CustomScrollView(
         slivers: [
@@ -3024,7 +3152,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
                   const SizedBox(height: 12),
 
-                  // ── Tab Bar (Grid / Tagged) ──
+                  // ── Tab Bar (Posts / Saved / Tagged)
                   Row(
                     children: [
                       Expanded(
@@ -3050,7 +3178,10 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                       Expanded(
                         child: InkWell(
-                          onTap: () => setState(() => _selectedTab = 1),
+                          onTap: () {
+                            setState(() => _selectedTab = 1);
+                            loadSavedPostsForProfile();
+                          },
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             decoration: BoxDecoration(
@@ -3062,22 +3193,42 @@ class _ProfilePageState extends State<ProfilePage> {
                               ),
                             ),
                             child: Icon(
-                              Icons.account_box_outlined,
+                              Icons.bookmark_border,
                               color: _selectedTab == 1 ? (isDark ? Colors.white : Colors.black) : Colors.grey,
+                              size: 23,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(() => _selectedTab = 2),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: _selectedTab == 2 ? (isDark ? Colors.white : Colors.black) : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.account_box_outlined,
+                              color: _selectedTab == 2 ? (isDark ? Colors.white : Colors.black) : Colors.grey,
                               size: 24,
                             ),
                           ),
                         ),
                       ),
                     ],
-                  ),
-                ],
+                  ),                ],
               ),
             ),
           ),
 
-          // ── Posts Grid or Tagged Empty State ──
-          if (_selectedTab == 1)
+          // ── Posts / Saved / Tagged ──
+          if (_selectedTab == 2)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 60),
@@ -3094,10 +3245,67 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
             )
+          else if (_selectedTab == 1)
+            isSavedPostsLoading
+                ? const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
+                : savedPosts.isEmpty
+                    ? SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 60),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                Icon(Icons.bookmark_border, size: 54, color: Colors.grey[600]),
+                                const SizedBox(height: 12),
+                                Text('No saved posts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
+                                const SizedBox(height: 6),
+                                Text('Posts you save will appear here.', style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : SliverGrid(
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 1.5,
+                          mainAxisSpacing: 1.5,
+                        ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final post = Map<String, dynamic>.from(savedPosts[index] as Map);
+                            final imageUrl = post['imageUrl'];
+                            return GestureDetector(
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => PostDetailPage(post: post)),
+                                );
+                                await loadSavedPostsForProfile();
+                              },
+                              child: imageUrl != null && imageUrl.toString().isNotEmpty
+                                  ? Image.network(imageUrl.toString(), fit: BoxFit.cover)
+                                  : Container(
+                                      color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEAEAEA),
+                                      child: Center(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(8),
+                                          child: Text(
+                                            post['title'] ?? post['content'] ?? '',
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : Colors.grey[700]),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                            );
+                          },
+                          childCount: savedPosts.length,
+                        ),
+                      )
           else if (isPostsLoading)
-            const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
-            )
+            const SliverFillRemaining(child: Center(child: CircularProgressIndicator()))
           else if (myPosts.isEmpty)
             SliverToBoxAdapter(
               child: Padding(
@@ -3148,9 +3356,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     onTap: () async {
                       final result = await Navigator.push(
                         context,
-                        MaterialPageRoute(
-                          builder: (context) => PostDetailPage(post: post),
-                        ),
+                        MaterialPageRoute(builder: (context) => PostDetailPage(post: post)),
                       );
                       if (result == 'deleted') loadMyPosts();
                     },
@@ -3174,8 +3380,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 },
                 childCount: myPosts.length,
               ),
-            ),
-        ],
+            ),        ],
       ),
     );
   }
@@ -4498,1140 +4703,3 @@ class _UserProfilePageState
                                       style: TextStyle(
                                         fontSize: 13,
                                         color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // POSTS GRID
-                      if (isPostsLoading)
-                        const Center(
-                          child: CircularProgressIndicator(),
-                        )
-                      else if (posts.isEmpty)
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.photo_library_outlined,
-                                  size: 60,
-                                  color: Colors.grey[300],
-                                ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  'No posts yet',
-                                  style: TextStyle(
-                                    color: Colors.grey[500],
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      else
-                        GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: posts.length,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 3,
-                            mainAxisSpacing: 3,
-                          ),
-                          itemBuilder: (context, index) {
-                            final post = posts[index];
-                            final pImageUrl = post['imageUrl'];
-
-                            return InkWell(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => PostDetailPage(
-                                      post: post,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: pImageUrl == null ||
-                                      pImageUrl.toString().isEmpty
-                                  ? Container(
-                                      color: Colors.grey[200],
-                                      child: const Icon(
-                                        Icons.image_not_supported_outlined,
-                                        color: Colors.grey,
-                                      ),
-                                    )
-                                  : Image.network(
-                                      pImageUrl.toString(),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (ctx, e, st) => Container(
-                                        color: Colors.grey[200],
-                                        child: const Icon(
-                                          Icons.broken_image_outlined,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ),
-                            );
-                          },
-                        ),
-                    ],
-                  ),
-      ),
-    );
-  }
-}
-
-// ======================================================
-// NOTIFICATIONS PAGE  (Step 8 — Notifications)
-// ======================================================
-
-class NotificationsPage extends StatefulWidget {
-  const NotificationsPage({super.key});
-
-  @override
-  State<NotificationsPage> createState() => _NotificationsPageState();
-}
-
-class _NotificationsPageState extends State<NotificationsPage> {
-  List<dynamic> notifications = [];
-  bool isLoading = true;
-  String? errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    loadNotifications();
-  }
-
-  Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('accessToken');
-  }
-
-  Future<void> loadNotifications() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/notifications'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          notifications = data is List ? data : [];
-          isLoading = false;
-        });
-      } else {
-        setState(() {
-          errorMessage = 'Failed to load notifications';
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        errorMessage = 'Connection error: $e';
-        isLoading = false;
-      });
-    }
-  }
-
-  Future<void> markAllAsRead() async {
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      final response = await http.patch(
-        Uri.parse('$apiBaseUrl/notifications/read-all'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        setState(() {
-          for (var item in notifications) {
-            item['isRead'] = true;
-          }
-        });
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All notifications marked as read'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (_) {}
-  }
-
-  Future<void> markSingleAsRead(int id) async {
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      await http.patch(
-        Uri.parse('$apiBaseUrl/notifications/$id/read'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      setState(() {
-        final idx = notifications.indexWhere((n) => n['id'] == id);
-        if (idx != -1) {
-          notifications[idx]['isRead'] = true;
-        }
-      });
-    } catch (_) {}
-  }
-
-  IconData _getNotificationIcon(String? type) {
-    switch (type) {
-      case 'like':
-        return Icons.favorite;
-      case 'comment':
-        return Icons.chat_bubble_rounded;
-      case 'follow':
-        return Icons.person_add_rounded;
-      default:
-        return Icons.notifications;
-    }
-  }
-
-  Color _getNotificationColor(String? type) {
-    switch (type) {
-      case 'like':
-        return Colors.redAccent;
-      case 'comment':
-        return Colors.blue;
-      case 'follow':
-        return Colors.purple;
-      default:
-        return Colors.orange;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final unreadCount =
-        notifications.where((n) => n['isRead'] == false).length;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Notifications',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        actions: [
-          if (unreadCount > 0)
-            TextButton(
-              onPressed: markAllAsRead,
-              child: const Text('Mark all read'),
-            ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: loadNotifications,
-        child: isLoading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : errorMessage != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.error_outline,
-                          size: 60,
-                          color: Colors.red,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(errorMessage!),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: loadNotifications,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  )
-                : notifications.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.notifications_none_rounded,
-                              size: 80,
-                              color: Colors.grey[300],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No notifications yet',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'When people follow you, like or comment on your posts,\nyou will see them here.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[500],
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: notifications.length,
-                        separatorBuilder: (context, index) => const Divider(
-                          height: 1,
-                          indent: 72,
-                        ),
-                        itemBuilder: (context, index) {
-                          final item = notifications[index];
-                          final isRead = item['isRead'] == true;
-                          final type = item['type']?.toString();
-                          final message = item['message'] ?? '';
-                          final createdAt = item['createdAt'];
-
-                          return InkWell(
-                            onTap: () {
-                              if (!isRead && item['id'] != null) {
-                                markSingleAsRead(item['id']);
-                              }
-                            },
-                            child: Container(
-                              color: isRead
-                                  ? Colors.transparent
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.06),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  CircleAvatar(
-                                    radius: 22,
-                                    backgroundColor: _getNotificationColor(type)
-                                        .withValues(alpha: 0.15),
-                                    child: Icon(
-                                      _getNotificationIcon(type),
-                                      color: _getNotificationColor(type),
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          message,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: isRead
-                                                ? FontWeight.normal
-                                                : FontWeight.bold,
-                                            color: Colors.black87,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          formatTimeAgo(createdAt),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[500],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (!isRead)
-                                    Container(
-                                      width: 9,
-                                      height: 9,
-                                      margin: const EdgeInsets.only(
-                                        top: 6,
-                                        left: 8,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-      ),
-    );
-  }
-}
-
-// ======================================================
-// USER LIST PAGE (FOLLOWERS / FOLLOWING)
-// ======================================================
-
-class UserListPage extends StatefulWidget {
-  final int userId;
-  final String title;
-  final String endpoint; // 'followers' or 'following'
-
-  const UserListPage({
-    super.key,
-    required this.userId,
-    required this.title,
-    required this.endpoint,
-  });
-
-  @override
-  State<UserListPage> createState() => _UserListPageState();
-}
-
-class _UserListPageState extends State<UserListPage> {
-  List<dynamic> users = [];
-  bool isLoading = true;
-  String? errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    fetchUsers();
-  }
-
-  Future<void> fetchUsers() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('accessToken');
-
-      final response = await http.get(
-        Uri.parse(
-          '$apiBaseUrl/users/${widget.userId}/${widget.endpoint}',
-        ),
-        headers: {
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (mounted) {
-          setState(() {
-            users = data is List ? data : [];
-            isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            errorMessage = 'Failed to load list: ${response.statusCode}';
-            isLoading = false;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          errorMessage = 'Connection error: $e';
-          isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: [
-          if (!isLoading && errorMessage == null)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${users.length}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: buildBody(),
-    );
-  }
-
-  Widget buildBody() {
-    if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    if (errorMessage != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                size: 56,
-                color: Colors.redAccent,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                errorMessage!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: fetchUsers,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (users.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.people_outline,
-                size: 64,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                widget.endpoint == 'followers'
-                    ? 'No followers yet'
-                    : 'Not following anyone yet',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'When people connect, they will appear here.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey.shade500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: fetchUsers,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: users.length,
-        separatorBuilder: (context, index) => Divider(
-          height: 1,
-          indent: 72,
-          color: Colors.grey.shade200,
-        ),
-        itemBuilder: (context, index) {
-          final user = users[index];
-          final String name = user['name'] ?? '';
-          final String username = user['username'] ?? '';
-          final String displayName =
-              name.isNotEmpty ? name : (username.isNotEmpty ? username : 'User');
-          final String? profileImageUrl = user['profileImageUrl'];
-          final String? bio = user['bio'];
-          final String firstLetter = displayName.isNotEmpty
-              ? displayName.substring(0, 1).toUpperCase()
-              : 'U';
-
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 4,
-            ),
-            leading: CircleAvatar(
-              radius: 24,
-              backgroundImage: (profileImageUrl != null &&
-                      profileImageUrl.isNotEmpty)
-                  ? NetworkImage(profileImageUrl)
-                  : null,
-              child: (profileImageUrl == null || profileImageUrl.isEmpty)
-                  ? Text(
-                      firstLetter,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    )
-                  : null,
-            ),
-            title: Text(
-              displayName,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (username.isNotEmpty)
-                  Text(
-                    '@$username',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                if (bio != null && bio.trim().isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    bio.trim(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            trailing: const Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 14,
-              color: Colors.grey,
-            ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => UserProfilePage(
-                    userId: user['id'],
-                    userName: displayName,
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ======================================================
-// CREATE POST PAGE
-// ======================================================
-
-class CreatePostPage extends StatefulWidget {
-  const CreatePostPage({super.key});
-
-  @override
-  State<CreatePostPage> createState() => _CreatePostPageState();
-}
-
-class _CreatePostPageState extends State<CreatePostPage> {
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _contentController = TextEditingController();
-  final ImagePicker _picker = ImagePicker();
-
-  XFile? _selectedImage;
-  Uint8List? _imageBytes;
-  bool _isSubmitting = false;
-  int _selectedBackgroundColor = 0xFFF3F4F6;
-  double _selectedFontSize = 22;
-
-  final List<int> _backgroundColors = const [
-    0xFFF3F4F6, 0xFFFFF3E0, 0xFFFFE4E6, 0xFFE0F2FE,
-    0xFFDCFCE7, 0xFFEDE9FE, 0xFFFFF7ED, 0xFF111827,
-  ];
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _contentController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickImage(ImageSource source) async {
-    try {
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        imageQuality: 85,
-      );
-      if (image != null) {
-        final bytes = await image.readAsBytes();
-        setState(() {
-          _selectedImage = image;
-          _imageBytes = bytes;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to pick image: $e')),
-      );
-    }
-  }
-
-  void _removeImage() {
-    setState(() {
-      _selectedImage = null;
-      _imageBytes = null;
-    });
-  }
-
-  Future<void> _submitPost() async {
-    final title = _titleController.text.trim();
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a post title'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('accessToken');
-
-      if (token == null || token.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login token not found. Please log in again.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$apiBaseUrl/posts'),
-      );
-
-      request.headers['Authorization'] = 'Bearer $token';
-      request.fields['title'] = title;
-
-      final content = _contentController.text.trim();
-      if (content.isNotEmpty) {
-        request.fields['content'] = content;
-      }
-
-      request.fields['backgroundColor'] = '#' + _selectedBackgroundColor.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
-      request.fields['fontSize'] = _selectedFontSize.round().toString();
-
-      if (_selectedImage != null && _imageBytes != null) {
-        request.files.add(
-          http.MultipartFile.fromBytes(
-            'image',
-            _imageBytes!,
-            filename: _selectedImage!.name,
-          ),
-        );
-      }
-
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Post published successfully! 🎉'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.pop(context, true);
-      } else {
-        String errorMsg = 'Failed to publish post (${response.statusCode})';
-        try {
-          final data = jsonDecode(response.body);
-          if (data['message'] != null) {
-            errorMsg = data['message'] is List
-                ? (data['message'] as List).join(', ')
-                : data['message'].toString();
-          }
-        } catch (_) {}
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMsg),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Create Post',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TextButton.icon(
-              onPressed: _isSubmitting ? null : _submitPost,
-              icon: _isSubmitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send_rounded, size: 18),
-              label: const Text(
-                'Post',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // IMAGE PICKER / PREVIEW CARD
-            if (_imageBytes != null)
-              Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.memory(
-                      _imageBytes!,
-                      width: double.infinity,
-                      height: 230,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: CircleAvatar(
-                      radius: 18,
-                      backgroundColor: Colors.black.withValues(alpha: 0.6),
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: const Icon(
-                          Icons.close,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        onPressed: _removeImage,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 10,
-                    right: 10,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black.withValues(alpha: 0.65),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                      ),
-                      onPressed: () => _pickImage(ImageSource.gallery),
-                      icon: const Icon(Icons.change_circle_outlined, size: 16),
-                      label: const Text('Change', style: TextStyle(fontSize: 12)),
-                    ),
-                  ),
-                ],
-              )
-            else
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: theme.colorScheme.outline.withValues(alpha: 0.3),
-                    width: 1.5,
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 28,
-                      backgroundColor: theme.colorScheme.primary
-                          .withValues(alpha: 0.12),
-                      child: Icon(
-                        Icons.add_photo_alternate_rounded,
-                        size: 30,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Add a photo to your post',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'JPG or PNG images are supported',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () => _pickImage(ImageSource.gallery),
-                          icon: const Icon(Icons.photo_library_outlined, size: 18),
-                          label: const Text('Gallery'),
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        OutlinedButton.icon(
-                          onPressed: () => _pickImage(ImageSource.camera),
-                          icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                          label: const Text('Camera'),
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 24),
-
-            // POST TITLE
-            TextField(
-              controller: _titleController,
-              decoration: InputDecoration(
-                labelText: 'Post Title *',
-                hintText: 'What is this post about?',
-                prefixIcon: const Icon(Icons.title_rounded),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                filled: true,
-                fillColor: theme.colorScheme.surface,
-              ),
-              textCapitalization: TextCapitalization.sentences,
-            ),
-
-            const SizedBox(height: 16),
-
-            // POST CONTENT / CAPTION
-            TextField(
-              controller: _contentController,
-              minLines: 3,
-              maxLines: 6,
-              decoration: InputDecoration(
-                labelText: 'Caption (Optional)',
-                hintText: 'Write more details or your thoughts...',
-                prefixIcon: const Padding(
-                  padding: EdgeInsets.only(bottom: 50),
-                  child: Icon(Icons.notes_rounded),
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                filled: true,
-                fillColor: theme.colorScheme.surface,
-              ),
-              textCapitalization: TextCapitalization.sentences,
-            ),
-
-            // TEXT POST STYLING
-            if (_selectedImage == null) ...[
-              Text('Text Post Style', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(color: Color(_selectedBackgroundColor), borderRadius: BorderRadius.circular(18)),
-                child: Text(
-                  _titleController.text.trim().isEmpty ? 'Your text post preview' : _titleController.text.trim(),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: _selectedFontSize, fontWeight: FontWeight.w700, color: _selectedBackgroundColor == 0xFF111827 ? Colors.white : Colors.black87, height: 1.25),
-                ),
-              ),
-              const SizedBox(height: 14),
-              const Text('Background', style: TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: _backgroundColors.map((colorValue) {
-                  final selected = _selectedBackgroundColor == colorValue;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedBackgroundColor = colorValue),
-                    child: Container(
-                      width: 38, height: 38,
-                      decoration: BoxDecoration(color: Color(colorValue), shape: BoxShape.circle, border: Border.all(color: selected ? theme.colorScheme.primary : Colors.grey.shade300, width: selected ? 3 : 1)),
-                      child: selected ? Icon(Icons.check, size: 18, color: colorValue == 0xFF111827 ? Colors.white : Colors.black87) : null,
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 14),
-              Row(children: [const Text('Font size', style: TextStyle(fontWeight: FontWeight.w600)), const Spacer(), Text(_selectedFontSize.round().toString() + ' px', style: const TextStyle(fontWeight: FontWeight.bold))]),
-              Slider(min: 16, max: 40, divisions: 12, value: _selectedFontSize, label: _selectedFontSize.round().toString() + ' px', onChanged: (value) => setState(() => _selectedFontSize = value)),
-              const SizedBox(height: 14),
-            ],
-
-            // PUBLISH BUTTON
-            SizedBox(
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: _isSubmitting ? null : _submitPost,
-                icon: _isSubmitting
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.publish_rounded, size: 20),
-                label: Text(
-                  _isSubmitting ? 'Publishing...' : 'Publish Post',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: theme.colorScheme.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
