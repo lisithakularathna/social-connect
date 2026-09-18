@@ -18,27 +18,8 @@ export class MessagesService {
       return false;
     }
 
-    const [currentFollowsTarget, targetFollowsCurrent] =
-      await Promise.all([
-        db.orm.public.Follow
-          .where({
-            followerId: currentUserId,
-            followingId: targetUserId,
-          })
-          .count(),
-
-        db.orm.public.Follow
-          .where({
-            followerId: targetUserId,
-            followingId: currentUserId,
-          })
-          .count(),
-      ]);
-
-    return (
-      Number(currentFollowsTarget) > 0 &&
-      Number(targetFollowsCurrent) > 0
-    );
+    // Any user can message any other user
+    return true;
   }
 
   async getMessages(
@@ -155,7 +136,7 @@ export class MessagesService {
   }
 
   async getConversations(currentUserId: number) {
-    const [sent, received] = await Promise.all([
+    const [sent, received, following] = await Promise.all([
       db.orm.public.Message
         .where({ senderId: currentUserId })
         .all(),
@@ -163,14 +144,14 @@ export class MessagesService {
       db.orm.public.Message
         .where({ receiverId: currentUserId })
         .all(),
+        
+      db.orm.public.Follow
+        .where({ followerId: currentUserId })
+        .all(),
     ]);
 
     const allMessages = [...sent, ...received];
-
-    const conversationMap = new Map<
-      number,
-      any
-    >();
+    const conversationMap = new Map<number, any>();
 
     for (const message of allMessages) {
       const otherUserId =
@@ -178,24 +159,30 @@ export class MessagesService {
           ? message.receiverId
           : message.senderId;
 
-      const existing =
-        conversationMap.get(otherUserId);
+      const existing = conversationMap.get(otherUserId);
 
       if (
         !existing ||
         new Date(message.createdAt).getTime() >
           new Date(existing.createdAt).getTime()
       ) {
-        conversationMap.set(
-          otherUserId,
-          message,
-        );
+        conversationMap.set(otherUserId, message);
+      }
+    }
+    
+    // Also add people we follow if they aren't in the conversation map yet
+    for (const f of following) {
+      if (!conversationMap.has(f.followingId)) {
+        conversationMap.set(f.followingId, {
+          id: 0,
+          content: 'Say hi!',
+          senderId: currentUserId,
+          createdAt: new Date().toISOString(),
+        });
       }
     }
 
-    const userIds = Array.from(
-      conversationMap.keys(),
-    );
+    const userIds = Array.from(conversationMap.keys());
 
     if (userIds.length === 0) {
       return [];
@@ -205,12 +192,8 @@ export class MessagesService {
 
     return userIds
       .map((userId) => {
-        const user = users.find(
-          (u) => u.id === userId,
-        );
-
-        const lastMessage =
-          conversationMap.get(userId);
+        const user = users.find((u) => u.id === userId);
+        const lastMessage = conversationMap.get(userId);
 
         if (!user) return null;
 
@@ -219,15 +202,13 @@ export class MessagesService {
             id: user.id,
             username: user.username,
             name: user.name,
-            profileImageUrl:
-              user.profileImageUrl,
+            profileImageUrl: user.profileImageUrl,
           },
           lastMessage: {
             id: lastMessage.id,
             content: lastMessage.content,
             senderId: lastMessage.senderId,
-            createdAt:
-              lastMessage.createdAt,
+            createdAt: lastMessage.createdAt,
           },
         };
       })
