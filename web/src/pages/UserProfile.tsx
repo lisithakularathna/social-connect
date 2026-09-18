@@ -33,7 +33,7 @@ function UserProfile() {
     followingCount: 0,
   });
   const [isFollowing, setIsFollowing] = useState(false);
-  const [canMessage, setCanMessage] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const navigate = useNavigate();
@@ -163,7 +163,7 @@ function UserProfile() {
                 >
                   {isFollowing ? "Following" : "Follow"}
                 </button>
-                {canMessage && (
+                {currentUserId !== null && currentUserId !== Number(user.id) && (
                   <button
                     onClick={() => navigate(`/messages/${userId}`)}
                     className="message-btn"
