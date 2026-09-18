@@ -18,6 +18,8 @@ export class PostsService {
     content: string | undefined,
     authorId: number,
     file?: { buffer: Buffer },
+    backgroundColor?: string,
+    fontSize?: number,
   ) {
     let imageUrl: string | undefined;
 
@@ -31,6 +33,8 @@ export class PostsService {
       title,
       content,
       imageUrl,
+      backgroundColor,
+      fontSize,
       authorId,
     });
 
@@ -83,6 +87,8 @@ export class PostsService {
         title: post.title,
         content: post.content,
         imageUrl: post.imageUrl,
+        backgroundColor: post.backgroundColor,
+        fontSize: post.fontSize,
         authorId: post.authorId,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
@@ -144,6 +150,8 @@ export class PostsService {
     userId: number,
     title: string | undefined,
     content: string | undefined,
+    backgroundColor: string | undefined,
+    fontSize: number | undefined,
   ) {
     const posts = await db.orm.public.Post
       .where({ id: postId })
@@ -174,6 +182,14 @@ export class PostsService {
 
     if (content !== undefined) {
       updateData.content = content;
+    }
+
+    if (backgroundColor !== undefined) {
+      updateData.backgroundColor = backgroundColor;
+    }
+
+    if (fontSize !== undefined) {
+      updateData.fontSize = Math.min(Math.max(Math.round(fontSize), 16), 48);
     }
 
     await db.orm.public.Post
