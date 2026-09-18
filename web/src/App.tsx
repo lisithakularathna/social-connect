@@ -11,6 +11,9 @@ import Home from "./pages/Home";
 import CreatePost from "./pages/CreatePost";
 import Profile from "./pages/Profile";
 import UserProfile from "./pages/UserProfile";
+import Search from "./pages/Search";
+import Activity from "./pages/Activity";
+import Messages from "./pages/Messages";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -18,7 +21,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public */}
+
         <Route
           path="/login"
           element={<Login />}
@@ -29,7 +32,6 @@ function App() {
           element={<Register />}
         />
 
-        {/* Home */}
         <Route
           path="/"
           element={
@@ -39,7 +41,6 @@ function App() {
           }
         />
 
-        {/* Create Post */}
         <Route
           path="/create"
           element={
@@ -49,7 +50,6 @@ function App() {
           }
         />
 
-        {/* My Profile */}
         <Route
           path="/profile"
           element={
@@ -59,7 +59,6 @@ function App() {
           }
         />
 
-        {/* Other User Profile */}
         <Route
           path="/user/:userId"
           element={
@@ -69,31 +68,49 @@ function App() {
           }
         />
 
-        {/* Future Search */}
         <Route
           path="/search"
           element={
             <ProtectedRoute>
-              <div />
+              <Search />
             </ProtectedRoute>
           }
         />
 
-        {/* Future Activity */}
         <Route
           path="/activity"
           element={
             <ProtectedRoute>
-              <div />
+              <Activity />
             </ProtectedRoute>
           }
         />
 
-        {/* Unknown */}
+        <Route
+          path="/messages"
+          element={
+            <ProtectedRoute>
+              <Messages />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/messages/:userId"
+          element={
+            <ProtectedRoute>
+              <Messages />
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="*"
-          element={<Navigate to="/" replace />}
+          element={
+            <Navigate to="/" replace />
+          }
         />
+
       </Routes>
     </BrowserRouter>
   );

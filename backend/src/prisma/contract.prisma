@@ -17,6 +17,8 @@ model User {
   followers       Follow[] @relation("following")
 
   notifications   Notification[]
+  sentMessages       Message[] @relation("sentMessages")
+  receivedMessages   Message[] @relation("receivedMessages")
 
   createdAt       TimestamptzString @default(now())
   updatedAt       temporal.updatedAtString()
@@ -76,4 +78,14 @@ model Notification {
   message   String
   isRead    Boolean  @default(false)
   createdAt TimestamptzString @default(now())
+}
+
+model Message {
+  id          Int      @id @default(autoincrement())
+  content     String
+  sender      User     @relation("sentMessages", fields: [senderId], references: [id])
+  senderId    Int
+  receiver    User     @relation("receivedMessages", fields: [receiverId], references: [id])
+  receiverId  Int
+  createdAt   TimestamptzString @default(now())
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
 import api from "../api/api";
@@ -33,23 +33,28 @@ function UserProfile() {
     followingCount: 0,
   });
   const [isFollowing, setIsFollowing] = useState(false);
+  const [canMessage, setCanMessage] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const navigate = useNavigate();
 
   const loadUserProfile = async () => {
     if (!userId) return;
 
     try {
-      const [userRes, postsRes, statsRes, followCheckRes] = await Promise.all([
+      const [userRes, postsRes, statsRes, followCheckRes, messageCheckRes] = await Promise.all([
         api.get(`/users/${userId}`),
         api.get(`/posts/user/${userId}`),
         api.get(`/follows/stats/${userId}`),
         api.get(`/follows/check/${userId}`),
+        api.get(`/messages/can-message/${userId}`),
       ]);
 
       setUser(userRes.data);
       setPosts(postsRes.data);
       setFollowStats(statsRes.data);
       setIsFollowing(followCheckRes.data.isFollowing);
+      setCanMessage(messageCheckRes.data.canMessage);
     } catch (error) {
       console.error(error);
     } finally {
@@ -76,6 +81,8 @@ function UserProfile() {
           followersCount: prev.followersCount + 1,
         }));
       }
+      // Re-load profile to refresh follow stats and message permission
+      await loadUserProfile();
     } catch (error) {
       console.error(error);
     }
@@ -136,14 +143,24 @@ function UserProfile() {
           </div>
 
           <div className="profile-info">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <div className="profile-actions">
               <h1>{user.username}</h1>
-              <button 
-                onClick={toggleFollow}
-                className={isFollowing ? "follow-btn following" : "follow-btn"}
-              >
-                {isFollowing ? "Following" : "Follow"}
-              </button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  onClick={toggleFollow}
+                  className={isFollowing ? "follow-btn following" : "follow-btn"}
+                >
+                  {isFollowing ? "Following" : "Follow"}
+                </button>
+                {canMessage && (
+                  <button
+                    onClick={() => navigate(`/messages/${userId}`)}
+                    className="message-btn"
+                  >
+                    Message
+                  </button>
+                )}
+              </div>
             </div>
 
             {user.name && <h3>{user.name}</h3>}
