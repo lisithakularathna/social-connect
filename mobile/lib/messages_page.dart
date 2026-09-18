@@ -133,8 +133,15 @@ class ChatPage extends StatefulWidget {
   final int userId;
   final String username;
   final String? profileImageUrl;
+  final Map<String, dynamic>? sharedPost;
 
-  const ChatPage({super.key, required this.userId, required this.username, this.profileImageUrl});
+  const ChatPage({
+    super.key,
+    required this.userId,
+    required this.username,
+    this.profileImageUrl,
+    this.sharedPost,
+  });
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -223,7 +230,15 @@ class _ChatPageState extends State<ChatPage> {
       final response = await http.post(
         Uri.parse('$apiBaseUrl/messages/${widget.userId}'),
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
-        body: jsonEncode({'content': content}),
+        body: jsonEncode({
+          'content': widget.sharedPost == null
+              ? content
+              : jsonEncode({
+                  '__sharedPost__': true,
+                  'text': content,
+                  'post': widget.sharedPost,
+                }),
+        }),
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {
@@ -282,25 +297,50 @@ class _ChatPageState extends State<ChatPage> {
                               final message = messages[index];
                               final isMine = currentUserId != null &&
                                   message['senderId'].toString() == currentUserId.toString();
+                              final rawContent = message['content']?.toString() ?? '';
+                              Map<String, dynamic>? sharedPost;
+                              String displayText = rawContent;
+
+                              try {
+                                final decoded = jsonDecode(rawContent);
+                                if (decoded is Map && decoded['__sharedPost__'] == true) {
+                                  sharedPost = Map<String, dynamic>.from(decoded['post'] as Map);
+                                  displayText = decoded['text']?.toString() ?? '';
+                                }
+                              } catch (_) {}
+
                               return Align(
                                 alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
                                 child: Container(
-                                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
+                                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
                                   margin: const EdgeInsets.only(bottom: 8),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                                  padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
                                     color: isMine
                                         ? Theme.of(context).colorScheme.primary
                                         : Theme.of(context).colorScheme.surfaceContainerHighest,
                                     borderRadius: BorderRadius.circular(18),
                                   ),
-                                  child: Text(
-                                    message['content']?.toString() ?? '',
-                                    style: TextStyle(
-                                      color: isMine
-                                          ? Theme.of(context).colorScheme.onPrimary
-                                          : Theme.of(context).colorScheme.onSurface,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (sharedPost != null) ...[
+                                        _SharedPostPreview(post: sharedPost),
+                                        if (displayText.isNotEmpty) const SizedBox(height: 8),
+                                      ],
+                                      if (displayText.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          child: Text(
+                                            displayText,
+                                            style: TextStyle(
+                                              color: isMine
+                                                  ? Theme.of(context).colorScheme.onPrimary
+                                                  : Theme.of(context).colorScheme.onSurface,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                               );
@@ -329,6 +369,69 @@ class _ChatPageState extends State<ChatPage> {
                       : const Icon(Icons.send_rounded),
                 ),
               ]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SharedPostPreview extends StatelessWidget {
+  final Map<String, dynamic> post;
+
+  const _SharedPostPreview({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = post['imageUrl']?.toString();
+    final title = post['title']?.toString() ?? '';
+    final body = post['content']?.toString() ?? '';
+    final author = post['author'] as Map?;
+    final authorName = author?['username']?.toString() ??
+        author?['name']?.toString() ??
+        'Post';
+
+    return Container(
+      width: double.infinity,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (imageUrl != null && imageUrl.isNotEmpty)
+            Image.network(
+              imageUrl,
+              height: 170,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                height: 100,
+                color: Colors.grey.shade300,
+                child: const Center(child: Icon(Icons.broken_image_outlined)),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(authorName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                const SizedBox(height: 4),
+                Text(
+                  title.isNotEmpty ? title : body,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (title.isNotEmpty && body.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(body, maxLines: 2, overflow: TextOverflow.ellipsis),
+                ],
+              ],
             ),
           ),
         ],
