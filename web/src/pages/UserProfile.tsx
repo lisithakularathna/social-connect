@@ -33,7 +33,7 @@ function UserProfile() {
     followingCount: 0,
   });
   const [isFollowing, setIsFollowing] = useState(false);
-  const [canMessage, setCanMessage] = useState(false);
+  const [canMessage, setCanMessage] = useState(true); // show by default, hide only if same user
   const [loading, setLoading] = useState(true);
 
   const navigate = useNavigate();
@@ -42,19 +42,19 @@ function UserProfile() {
     if (!userId) return;
 
     try {
-      const [userRes, postsRes, statsRes, followCheckRes, messageCheckRes] = await Promise.all([
+      const [userRes, postsRes, statsRes, followCheckRes] = await Promise.all([
         api.get(`/users/${userId}`),
         api.get(`/posts/user/${userId}`),
         api.get(`/follows/stats/${userId}`),
         api.get(`/follows/check/${userId}`),
-        api.get(`/messages/can-message/${userId}`),
       ]);
 
       setUser(userRes.data);
       setPosts(postsRes.data);
       setFollowStats(statsRes.data);
       setIsFollowing(followCheckRes.data.isFollowing);
-      setCanMessage(messageCheckRes.data.canMessage);
+      // Message button always visible for other users
+      setCanMessage(true);
     } catch (error) {
       console.error(error);
     } finally {
