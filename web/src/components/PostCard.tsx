@@ -89,7 +89,7 @@ function PostCard({ post }: Props) {
     if (!window.confirm("Are you sure you want to delete this post?")) return;
     try {
       await api.delete(`/posts/${post.id}`);
-      window.dispatchEvent(new CustomEvent("post-deleted", { detail: post.id }));
+      window.location.reload();
     } catch (error: any) {
       alert(error.response?.data?.message || "Failed to delete post");
     }
