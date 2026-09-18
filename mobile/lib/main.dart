@@ -2389,6 +2389,285 @@ class _RegisterPageState extends State<RegisterPage> {
 
 
 // ======================================================
+// ======================================================
+// PRIVACY & BLOCKED USERS (LOCAL SETTINGS)
+// ======================================================
+
+const String _privateAccountKey = 'privateAccount';
+const String _messagePrivacyKey = 'messagePrivacy';
+const String _blockedUsersKey = 'blockedUsers';
+
+Future<bool> loadPrivateAccountPreference() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getBool(_privateAccountKey) ?? false;
+}
+
+Future<void> setPrivateAccountPreference(bool value) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setBool(_privateAccountKey, value);
+}
+
+Future<String> loadMessagePrivacyPreference() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString(_messagePrivacyKey) ?? 'Everyone';
+}
+
+Future<void> setMessagePrivacyPreference(String value) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_messagePrivacyKey, value);
+}
+
+Future<List<Map<String, dynamic>>> loadBlockedUsers() async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getStringList(_blockedUsersKey) ?? [];
+  final result = <Map<String, dynamic>>[];
+  for (final item in raw) {
+    try {
+      final decoded = jsonDecode(item);
+      if (decoded is Map) result.add(Map<String, dynamic>.from(decoded));
+    } catch (_) {}
+  }
+  return result;
+}
+
+Future<void> saveBlockedUsers(List<Map<String, dynamic>> users) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setStringList(_blockedUsersKey, users.map((u) => jsonEncode(u)).toList());
+}
+
+class PrivacySettingsPage extends StatefulWidget {
+  const PrivacySettingsPage({super.key});
+  @override
+  State<PrivacySettingsPage> createState() => _PrivacySettingsPageState();
+}
+
+class _PrivacySettingsPageState extends State<PrivacySettingsPage> {
+  bool privateAccount = false;
+  String messagePrivacy = 'Everyone';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final privateValue = await loadPrivateAccountPreference();
+    final messageValue = await loadMessagePrivacyPreference();
+    if (!mounted) return;
+    setState(() {
+      privateAccount = privateValue;
+      messagePrivacy = messageValue;
+    });
+  }
+
+  Future<void> _chooseMessagePrivacy() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('Message Privacy', style: TextStyle(fontWeight: FontWeight.w800)),
+              subtitle: Text('Choose who can send you messages'),
+            ),
+            for (final option in ['Everyone', 'Followers', 'No one'])
+              RadioListTile<String>(
+                value: option,
+                groupValue: messagePrivacy,
+                title: Text(option),
+                onChanged: (value) => Navigator.pop(ctx, value),
+              ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+    if (selected == null) return;
+    await setMessagePrivacyPreference(selected);
+    if (mounted) setState(() => messagePrivacy = selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Privacy'), centerTitle: true),
+      body: ListView(
+        children: [
+          SwitchListTile(
+            secondary: const Icon(Icons.lock_outline),
+            title: const Text('Private Account', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(privateAccount ? 'Only approved followers can see your content' : 'Anyone can see your profile and posts'),
+            value: privateAccount,
+            onChanged: (value) async {
+              setState(() => privateAccount = value);
+              await setPrivateAccountPreference(value);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.chat_bubble_outline),
+            title: const Text('Message Privacy', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(messagePrivacy),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: _chooseMessagePrivacy,
+          ),
+          ListTile(
+            leading: const Icon(Icons.block_outlined),
+            title: const Text('Blocked Users', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Manage accounts you have blocked'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BlockedUsersPage())),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class BlockedUsersPage extends StatefulWidget {
+  const BlockedUsersPage({super.key});
+  @override
+  State<BlockedUsersPage> createState() => _BlockedUsersPageState();
+}
+
+class _BlockedUsersPageState extends State<BlockedUsersPage> {
+  final searchController = TextEditingController();
+  List<Map<String, dynamic>> blockedUsers = [];
+  List<dynamic> searchResults = [];
+  bool searching = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBlocked();
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadBlocked() async {
+    final users = await loadBlockedUsers();
+    if (mounted) setState(() => blockedUsers = users);
+  }
+
+  Future<void> _searchUsers(String value) async {
+    final query = value.trim();
+    if (query.isEmpty) {
+      if (mounted) setState(() => searchResults = []);
+      return;
+    }
+    setState(() => searching = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('accessToken');
+      if (token == null || token.isEmpty) return;
+      final encoded = Uri.encodeQueryComponent(query);
+      final response = await http.get(
+        Uri.parse('$apiBaseUrl/users/search?q=$encoded'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) setState(() => searchResults = data is List ? data : []);
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => searching = false);
+    }
+  }
+
+  Future<void> _blockUser(dynamic user) async {
+    final id = user['id'];
+    if (id == null || blockedUsers.any((u) => u['id'].toString() == id.toString())) return;
+    final item = <String, dynamic>{
+      'id': id,
+      'username': user['username'] ?? 'user',
+      'name': user['name'] ?? '',
+      'profileImageUrl': user['profileImageUrl'],
+    };
+    final updated = [...blockedUsers, item];
+    await saveBlockedUsers(updated);
+    if (!mounted) return;
+    setState(() {
+      blockedUsers = updated;
+      searchResults = [];
+      searchController.clear();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('@' + item['username'].toString() + ' blocked')),
+    );
+  }
+
+  Future<void> _unblockUser(Map<String, dynamic> user) async {
+    final updated = blockedUsers.where((u) => u['id'].toString() != user['id'].toString()).toList();
+    await saveBlockedUsers(updated);
+    if (mounted) {
+      setState(() => blockedUsers = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('@' + user['username'].toString() + ' unblocked')),
+      );
+    }
+  }
+
+  Widget _avatar(dynamic imageUrl) {
+    if (imageUrl != null && imageUrl.toString().isNotEmpty) {
+      return CircleAvatar(radius: 24, backgroundImage: NetworkImage(imageUrl.toString()));
+    }
+    return const CircleAvatar(radius: 24, child: Icon(Icons.person_outline));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Blocked Users'), centerTitle: true),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: [
+          TextField(
+            controller: searchController,
+            onChanged: _searchUsers,
+            decoration: InputDecoration(
+              hintText: 'Search username to block',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: searching ? const Padding(
+                padding: EdgeInsets.all(12),
+                child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+              ) : null,
+            ),
+          ),
+          if (searchResults.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('Search results', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey)),
+            ...searchResults.map((user) => ListTile(
+              leading: _avatar(user['profileImageUrl']),
+              title: Text(user['username']?.toString() ?? 'user'),
+              subtitle: Text(user['name']?.toString() ?? ''),
+              trailing: const Icon(Icons.block_outlined),
+              onTap: () => _blockUser(user),
+            )),
+          ],
+          const SizedBox(height: 20),
+          const Text('Blocked accounts', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey)),
+          if (blockedUsers.isEmpty)
+            const Padding(padding: EdgeInsets.symmetric(vertical: 32), child: Center(child: Text('No blocked users')))
+          else
+            ...blockedUsers.map((user) => ListTile(
+              leading: _avatar(user['profileImageUrl']),
+              title: Text(user['username']?.toString() ?? 'user'),
+              subtitle: Text(user['name']?.toString() ?? ''),
+              trailing: TextButton(onPressed: () => _unblockUser(user), child: const Text('Unblock')),
+            )),
+        ],
+      ),
+    );
+  }
+}
+
 // SETTINGS
 // ======================================================
 
@@ -2542,6 +2821,12 @@ class _SettingsPageState extends State<SettingsPage> {
             title: 'Notification Settings',
             subtitle: 'Likes, comments, followers, messages and mentions',
             onTap: _openNotificationSettings,
+          ),
+          _settingTile(
+            icon: Icons.lock_outline,
+            title: 'Privacy',
+            subtitle: 'Private account, message privacy and blocked users',
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacySettingsPage())),
           ),
         ],
       ),
