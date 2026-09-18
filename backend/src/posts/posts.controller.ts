@@ -32,6 +32,8 @@ export class PostsController {
     body: {
       title: string;
       content?: string;
+      backgroundColor?: string;
+      fontSize?: number;
     },
 
     @UploadedFile() file: { buffer: Buffer } | undefined,
@@ -43,6 +45,8 @@ export class PostsController {
       body.content,
       request.user.sub,
       file,
+      body.backgroundColor,
+      body.fontSize,
     );
   }
 
@@ -82,6 +86,8 @@ export class PostsController {
     body: {
       title?: string;
       content?: string;
+      backgroundColor?: string;
+      fontSize?: number;
     },
     @Request() request: any,
   ) {
@@ -90,6 +96,8 @@ export class PostsController {
       request.user.sub,
       body.title,
       body.content,
+      body.backgroundColor,
+      body.fontSize,
     );
   }
 
