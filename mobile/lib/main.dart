@@ -269,6 +269,60 @@ String formatTimeAgo(dynamic dateValue) {
   }
 }
 
+
+// ======================================================
+// SAVED POSTS (LOCAL)
+// ======================================================
+
+const String _savedPostsKey = 'savedPosts';
+
+Future<List<Map<String, dynamic>>> loadSavedPosts() async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getStringList(_savedPostsKey) ?? [];
+  final result = <Map<String, dynamic>>[];
+  for (final item in raw) {
+    try {
+      final decoded = jsonDecode(item);
+      if (decoded is Map) {
+        result.add(Map<String, dynamic>.from(decoded));
+      }
+    } catch (_) {}
+  }
+  return result;
+}
+
+Future<bool> isPostSaved(dynamic postId) async {
+  final posts = await loadSavedPosts();
+  return posts.any((p) => p['id'].toString() == postId.toString());
+}
+
+Future<bool> toggleSavedPost(Map<String, dynamic> post) async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getStringList(_savedPostsKey) ?? [];
+  final postId = post['id']?.toString();
+  if (postId == null) return false;
+
+  final index = raw.indexWhere((item) {
+    try {
+      final decoded = jsonDecode(item);
+      return decoded is Map && decoded['id']?.toString() == postId;
+    } catch (_) {
+      return false;
+    }
+  });
+
+  final bool saved;
+  if (index >= 0) {
+    raw.removeAt(index);
+    saved = false;
+  } else {
+    raw.add(jsonEncode(post));
+    saved = true;
+  }
+  await prefs.setStringList(_savedPostsKey, raw);
+  return saved;
+}
+
 // ======================================================
 // LOGIN PAGE
 // ======================================================
@@ -1009,6 +1063,8 @@ class _PostCardState extends State<PostCard>
   bool isLoadingLike = false;
   int likeCount = 0;
   bool _showHeart = false;
+  bool isSaved = false;
+  bool isLoadingSave = false;
   late AnimationController _heartController;
   late Animation<double> _heartAnim;
 
@@ -1018,6 +1074,7 @@ class _PostCardState extends State<PostCard>
     // Use data from backend response if available
     likeCount = widget.post['likesCount'] ?? 0;
     isLiked = widget.post['isLiked'] ?? false;
+    _loadSavedState();
 
     _heartController = AnimationController(
       vsync: this,
@@ -1075,6 +1132,54 @@ class _PostCardState extends State<PostCard>
     finally {
       if (mounted) setState(() => isLoadingLike = false);
     }
+  }
+
+  Future<void> _loadSavedState() async {
+    final saved = await isPostSaved(widget.post['id']);
+    if (mounted) setState(() => isSaved = saved);
+  }
+
+  Future<void> toggleSave() async {
+    if (isLoadingSave) return;
+    setState(() => isLoadingSave = true);
+    try {
+      final saved = await toggleSavedPost(Map<String, dynamic>.from(widget.post as Map));
+      if (!mounted) return;
+      setState(() => isSaved = saved);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(saved ? 'Post saved' : 'Post removed from saved')),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update saved post')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoadingSave = false);
+    }
+  }
+
+  void openPostChat() {
+    final author = widget.post['author'];
+    final authorId = int.tryParse(author?['id']?.toString() ?? '');
+    if (authorId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Post owner could not be found')),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPage(
+          userId: authorId,
+          username: (author?['username'] ?? author?['name'] ?? 'User').toString(),
+          profileImageUrl: author?['profileImageUrl']?.toString(),
+          sharedPost: Map<String, dynamic>.from(widget.post as Map),
+        ),
+      ),
+    );
   }
 
   void _doubleTapLike() {
@@ -1289,20 +1394,29 @@ class _PostCardState extends State<PostCard>
                 ),
                 const SizedBox(width: 4),
 
-                // Share
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  child: Icon(Icons.send_outlined,
-                      size: 24, color: isDark ? Colors.white : Colors.black),
+                // Message / Share
+                GestureDetector(
+                  onTap: openPostChat,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: Icon(Icons.send_outlined,
+                        size: 24, color: isDark ? Colors.white : Colors.black),
+                  ),
                 ),
 
                 const Spacer(),
 
-                // Bookmark
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  child: Icon(Icons.bookmark_border,
-                      size: 26, color: isDark ? Colors.white : Colors.black),
+                // Bookmark / Save
+                GestureDetector(
+                  onTap: toggleSave,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: Icon(
+                      isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      size: 26,
+                      color: isDark ? Colors.white : Colors.black,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -2275,6 +2389,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
   List<dynamic> myPosts = [];
   bool isPostsLoading = true;
+  List<Map<String, dynamic>> savedPosts = [];
+  bool isSavedPostsLoading = true;
 
   XFile? selectedImage;
 
@@ -2291,6 +2407,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void initState() {
     super.initState();
     loadProfile();
+    loadSavedPostsForProfile();
     loadMyPosts();
   }
 
@@ -2401,6 +2518,19 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() {
         isPostsLoading = false;
       });
+    }
+  }
+
+  Future<void> loadSavedPostsForProfile() async {
+    try {
+      final posts = await loadSavedPosts();
+      if (!mounted) return;
+      setState(() {
+        savedPosts = posts;
+        isSavedPostsLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => isSavedPostsLoading = false);
     }
   }
 
@@ -3069,6 +3199,27 @@ class _ProfilePageState extends State<ProfilePage> {
                           ),
                         ),
                       ),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => setState(() => _selectedTab = 2),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: BoxDecoration(
+                              border: Border(
+                                bottom: BorderSide(
+                                  color: _selectedTab == 2 ? (isDark ? Colors.white : Colors.black) : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                            child: Icon(
+                              isDark ? Icons.bookmark : Icons.bookmark_border,
+                              color: _selectedTab == 2 ? (isDark ? Colors.white : Colors.black) : Colors.grey,
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -3077,7 +3228,69 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
 
           // ── Posts Grid or Tagged Empty State ──
-          if (_selectedTab == 1)
+          if (_selectedTab == 2)
+            isSavedPostsLoading
+                ? const SliverFillRemaining(
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                : savedPosts.isEmpty
+                    ? SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 60),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                Icon(Icons.bookmark_border, size: 54, color: Colors.grey),
+                                const SizedBox(height: 12),
+                                Text('No saved posts', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
+                                const SizedBox(height: 6),
+                                Text('Posts you save will appear here.', style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : SliverPadding(
+                        padding: const EdgeInsets.all(3),
+                        sliver: SliverGrid(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final post = savedPosts[index];
+                              final imageUrl = post['imageUrl']?.toString();
+                              return InkWell(
+                                onTap: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => PostDetailPage(post: post)),
+                                  );
+                                  await loadSavedPostsForProfile();
+                                },
+                                child: imageUrl != null && imageUrl.isNotEmpty
+                                    ? Image.network(imageUrl, fit: BoxFit.cover)
+                                    : Container(
+                                        color: isDark ? const Color(0xFF222222) : Colors.grey[200],
+                                        padding: const EdgeInsets.all(8),
+                                        child: Center(
+                                          child: Text(
+                                            (post['title'] ?? post['content'] ?? 'Saved post').toString(),
+                                            maxLines: 5,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ),
+                              );
+                            },
+                            childCount: savedPosts.length,
+                          ),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 3,
+                            mainAxisSpacing: 3,
+                          ),
+                        ),
+                      )
+          else if (_selectedTab == 1)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 60),
