@@ -836,7 +836,9 @@ class _HomePageState extends State<HomePage> {
           const SizedBox.shrink(),
           // ── 3: Notifications ──
           const NotificationsPage(),
-          // ── 4: Profile ──
+          // ── 4: Messages ──
+          const MessagesPage(),
+          // ── 5: Profile ──
           const ProfilePage(),
         ],
       ),
