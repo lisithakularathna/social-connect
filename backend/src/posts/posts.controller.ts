@@ -47,6 +47,8 @@ export class PostsController {
       file,
       body.backgroundColor,
       body.fontSize,
+      body.backgroundColor,
+      body.fontSize,
     );
   }
 
