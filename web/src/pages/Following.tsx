@@ -97,13 +97,21 @@ function Following() {
                     </div>
                   </div>
 
-                  <button
-                    className="following-manage-btn"
-                    onClick={() => unfollow(user.id)}
-                    disabled={removingId === user.id}
-                  >
-                    {removingId === user.id ? "Removing..." : "Following"}
-                  </button>
+                  <div className="following-actions">
+                    <button
+                      className="following-message-btn"
+                      onClick={() => navigate(`/messages/${user.id}`)}
+                    >
+                      Message
+                    </button>
+                    <button
+                      className="following-manage-btn"
+                      onClick={() => unfollow(user.id)}
+                      disabled={removingId === user.id}
+                    >
+                      {removingId === user.id ? "Removing..." : "Following"}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
