@@ -1604,3 +1604,36 @@ button {
     font-size: 13px;
   }
 }
+
+.following-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.following-message-btn {
+  border: none;
+  background: #0095f6;
+  color: white;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.following-message-btn:hover {
+  background: #1877f2;
+}
+
+@media (max-width: 700px) {
+  .following-actions {
+    gap: 5px;
+  }
+
+  .following-message-btn {
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+}
