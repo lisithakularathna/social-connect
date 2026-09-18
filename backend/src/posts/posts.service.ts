@@ -66,12 +66,7 @@ export class PostsService {
     const [posts, totalCount] = await Promise.all([
       db.orm.public.Post
         .include('author')
-        .include('likes', (likes) =>
-          likes.combine({
-            total: likes.count(),
-            byMe: likes.where((l) => l.userId.eq(likerId)).count(),
-          }),
-        )
+        .include('likes')
         .include('comments', (comments) => comments.count())
         .orderBy([(p) => p.createdAt.desc(), (p) => p.id.desc()])
         .limit(safeLimit)
@@ -91,8 +86,8 @@ export class PostsService {
         authorId: post.authorId,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
-        likesCount: post.likes.total,
-        isLiked: post.likes.byMe > 0,
+        likesCount: post.likes.length,
+        isLiked: post.likes.some((l: any) => l.userId === likerId),
         commentsCount: post.comments,
         author: {
           id: post.author.id,
