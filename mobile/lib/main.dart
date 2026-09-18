@@ -978,6 +978,19 @@ class _HomePageState extends State<HomePage> {
 // POST CARD
 // ======================================================
 
+Color _postColor(dynamic hex, bool isDark) {
+  if (hex is String) {
+    final value = hex.replaceAll('#', '').trim();
+    try {
+      if (value.length == 6) return Color(int.parse('FF' + value, radix: 16));
+      if (value.length == 8) return Color(int.parse(value, radix: 16));
+    } catch (_) {}
+  }
+  return isDark ? const Color(0xFF1C1C1C) : const Color(0xFFF8F8F8);
+}
+
+Color _postTextColor(dynamic hex, bool isDark) => _postColor(hex, isDark).computeLuminance() < 0.35 ? Colors.white : Colors.black87;
+
 class PostCard extends StatefulWidget {
   final dynamic post;
 
@@ -1226,16 +1239,14 @@ class _PostCardState extends State<PostCard>
               },
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
-                color: isDark ? const Color(0xFF1C1C1C) : const Color(0xFFF8F8F8),
-                child: Text(
-                  title.toString(),
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: isDark ? Colors.white : Colors.black,
-                  ),
-                ),
+                constraints: const BoxConstraints(minHeight: 220),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
+                decoration: BoxDecoration(color: _postColor(widget.post['backgroundColor'], isDark)),
+                child: Center(child: Text(
+                  content.toString().trim().isNotEmpty ? content.toString() : title.toString(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: (widget.post['fontSize'] is num) ? (widget.post['fontSize'] as num).toDouble() : 22, fontWeight: FontWeight.w700, color: _postTextColor(widget.post['backgroundColor'], isDark), height: 1.3),
+                )),
               ),
             ),
 
@@ -3633,13 +3644,15 @@ class _PostDetailPageState
               )
             else
               Container(
-                height: 200,
                 width: double.infinity,
-                color: Colors.grey[200],
-                child: const Icon(
-                  Icons.image_not_supported_outlined,
-                  size: 60,
-                ),
+                constraints: const BoxConstraints(minHeight: 260),
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(color: _postColor(post['backgroundColor'], Theme.of(context).brightness == Brightness.dark)),
+                child: Center(child: Text(
+                  content.trim().isNotEmpty ? content : title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: (post['fontSize'] is num) ? (post['fontSize'] as num).toDouble() : 22, fontWeight: FontWeight.w700, color: _postTextColor(post['backgroundColor'], Theme.of(context).brightness == Brightness.dark), height: 1.3),
+                )),
               ),
 
             // CONTENT
@@ -5201,6 +5214,13 @@ class _CreatePostPageState extends State<CreatePostPage> {
   XFile? _selectedImage;
   Uint8List? _imageBytes;
   bool _isSubmitting = false;
+  int _selectedBackgroundColor = 0xFFF3F4F6;
+  double _selectedFontSize = 22;
+
+  final List<int> _backgroundColors = const [
+    0xFFF3F4F6, 0xFFFFF3E0, 0xFFFFE4E6, 0xFFE0F2FE,
+    0xFFDCFCE7, 0xFFEDE9FE, 0xFFFFF7ED, 0xFF111827,
+  ];
 
   @override
   void dispose() {
@@ -5280,6 +5300,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
       if (content.isNotEmpty) {
         request.fields['content'] = content;
       }
+
+      request.fields['backgroundColor'] = '#' + _selectedBackgroundColor.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
+      request.fields['fontSize'] = _selectedFontSize.round().toString();
 
       if (_selectedImage != null && _imageBytes != null) {
         request.files.add(
@@ -5537,7 +5560,42 @@ class _CreatePostPageState extends State<CreatePostPage> {
               textCapitalization: TextCapitalization.sentences,
             ),
 
-            const SizedBox(height: 28),
+            // TEXT POST STYLING
+            if (_selectedImage == null) ...[
+              Text('Text Post Style', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(color: Color(_selectedBackgroundColor), borderRadius: BorderRadius.circular(18)),
+                child: Text(
+                  _titleController.text.trim().isEmpty ? 'Your text post preview' : _titleController.text.trim(),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: _selectedFontSize, fontWeight: FontWeight.w700, color: _selectedBackgroundColor == 0xFF111827 ? Colors.white : Colors.black87, height: 1.25),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text('Background', style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: _backgroundColors.map((colorValue) {
+                  final selected = _selectedBackgroundColor == colorValue;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedBackgroundColor = colorValue),
+                    child: Container(
+                      width: 38, height: 38,
+                      decoration: BoxDecoration(color: Color(colorValue), shape: BoxShape.circle, border: Border.all(color: selected ? theme.colorScheme.primary : Colors.grey.shade300, width: selected ? 3 : 1)),
+                      child: selected ? Icon(Icons.check, size: 18, color: colorValue == 0xFF111827 ? Colors.white : Colors.black87) : null,
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              Row(children: [const Text('Font size', style: TextStyle(fontWeight: FontWeight.w600)), const Spacer(), Text(_selectedFontSize.round().toString() + ' px', style: const TextStyle(fontWeight: FontWeight.bold))]),
+              Slider(min: 16, max: 40, divisions: 12, value: _selectedFontSize, label: _selectedFontSize.round().toString() + ' px', onChanged: (value) => setState(() => _selectedFontSize = value)),
+              const SizedBox(height: 14),
+            ],
 
             // PUBLISH BUTTON
             SizedBox(
