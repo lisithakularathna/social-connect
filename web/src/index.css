@@ -1637,3 +1637,69 @@ button {
     font-size: 13px;
   }
 }
+
+/* Mobile profile actions */
+@media (max-width: 700px) {
+  .profile-actions {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .profile-actions h1 {
+    width: 100%;
+    text-align: center;
+  }
+
+  .profile-actions > div {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    gap: 8px !important;
+  }
+
+  .profile-actions .follow-btn,
+  .profile-actions .message-btn {
+    min-width: 120px;
+    padding: 9px 14px;
+    font-size: 14px;
+  }
+
+  .profile-actions .message-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+    color: #262626;
+    border: 1px solid #dbdbdb;
+  }
+
+  .profile-actions .message-btn:hover {
+    background: #f5f5f5;
+  }
+}
+
+/* Mobile messages layout */
+@media (max-width: 700px) {
+  .messages-layout {
+    width: 100%;
+  }
+
+  .conversation-item {
+    padding: 13px 14px;
+  }
+
+  .message-input {
+    padding: 10px;
+    background: white;
+  }
+
+  .message-input input {
+    min-width: 0;
+  }
+
+  .message-input button {
+    padding: 0 15px;
+  }
+}
