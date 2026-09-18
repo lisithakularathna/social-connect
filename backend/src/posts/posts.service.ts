@@ -67,7 +67,7 @@ export class PostsService {
       db.orm.public.Post
         .include('author')
         .include('likes')
-        .include('comments', (comments) => comments.count())
+        .include('comments')
         .orderBy([(p) => p.createdAt.desc(), (p) => p.id.desc()])
         .limit(safeLimit)
         .offset(offset)
@@ -88,7 +88,7 @@ export class PostsService {
         updatedAt: post.updatedAt,
         likesCount: post.likes.length,
         isLiked: post.likes.some((l: any) => l.userId === likerId),
-        commentsCount: post.comments,
+        commentsCount: Array.isArray(post.comments) ? post.comments.length : 0,
         author: {
           id: post.author.id,
           username: post.author.username,
