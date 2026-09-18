@@ -7,24 +7,30 @@ datasource db {
 }
 
 model User {
-  id           Int       @id @default(autoincrement())
-  username     String    @unique
-  email        String    @unique
-  password     String
-  profileImage String?
-  bio          String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id               Int       @id @default(autoincrement())
+  username         String    @unique
+  email            String    @unique
+  password         String
+  name             String?
+  profileImageUrl  String?
+  bio              String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  posts        Post[]
-  likes        Like[]
-  comments     Comment[]
+  posts            Post[]
+  likes            Like[]
+  comments         Comment[]
+  
+  // Follow relationships
+  following        Follow[]  @relation("UserFollowing")
+  followers        Follow[]  @relation("UserFollowers")
 }
 
 model Post {
   id        Int      @id @default(autoincrement())
-  imageUrl  String
-  caption   String?
+  title     String
+  content   String?
+  imageUrl  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -53,7 +59,7 @@ model Like {
 
 model Comment {
   id        Int      @id @default(autoincrement())
-  text      String
+  content   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -64,4 +70,19 @@ model Comment {
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
+}
+
+model Follow {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
+
+  followerId  Int
+  followingId Int
+
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
 }

@@ -11,6 +11,7 @@ import { LikesModule } from './likes/likes.module.js';
 import { CommentsModule } from './comments/comments.module.js';
 import { CloudinaryModule } from './cloudinary/cloudinary.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { FollowsModule } from './follows/follows.module.js';
 
 export const { ObserveModule, ObserveInstrument } =
   createObserveModule();
@@ -30,6 +31,7 @@ export const { ObserveModule, ObserveInstrument } =
     CommentsModule,
     CloudinaryModule,
     NotificationsModule,
+    FollowsModule,
   ],
 
   controllers: [AppController],
