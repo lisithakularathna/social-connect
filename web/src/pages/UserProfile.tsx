@@ -33,7 +33,7 @@ function UserProfile() {
     followingCount: 0,
   });
   const [isFollowing, setIsFollowing] = useState(false);
-  const [canMessage, setCanMessage] = useState(true); // show by default, hide only if same user
+  const [canMessage, setCanMessage] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const navigate = useNavigate();
@@ -42,19 +42,30 @@ function UserProfile() {
     if (!userId) return;
 
     try {
-      const [userRes, postsRes, statsRes, followCheckRes] = await Promise.all([
+      const [userRes, postsRes, statsRes, meRes] = await Promise.all([
         api.get(`/users/${userId}`),
         api.get(`/posts/user/${userId}`),
         api.get(`/follows/stats/${userId}`),
-        api.get(`/follows/check/${userId}`),
+        api.get("/users/me"),
       ]);
 
       setUser(userRes.data);
-      setPosts(postsRes.data);
-      setFollowStats(statsRes.data);
-      setIsFollowing(followCheckRes.data.isFollowing);
-      // Message button always visible for other users
-      setCanMessage(true);
+      setPosts(Array.isArray(postsRes.data) ? postsRes.data : []);
+      setFollowStats(statsRes.data || {
+        followersCount: 0,
+        followingCount: 0,
+      });
+
+      // Follow status is optional: a failure here must not hide the Message button.
+      try {
+        const followCheckRes = await api.get(`/follows/check/${userId}`);
+        setIsFollowing(Boolean(followCheckRes.data?.isFollowing));
+      } catch {
+        setIsFollowing(false);
+      }
+
+      // Message is available for every other user.
+      setCanMessage(Number(meRes.data?.id) !== Number(userId));
     } catch (error) {
       console.error(error);
     } finally {
@@ -81,7 +92,7 @@ function UserProfile() {
           followersCount: prev.followersCount + 1,
         }));
       }
-      // Re-load profile to refresh follow stats and message permission
+      // Refresh profile data without hiding the Message button.
       await loadUserProfile();
     } catch (error) {
       console.error(error);
