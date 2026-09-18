@@ -1703,3 +1703,538 @@ button {
     padding: 0 15px;
   }
 }
+
+
+/* =========================================
+   MOBILE APP EXPERIENCE
+   Responsive layout for phones and small screens
+========================================= */
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+}
+
+body {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+button,
+a,
+input,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 700px) {
+  /* Top bar */
+  .top-navbar {
+    height: 54px;
+    min-height: 54px;
+    padding: 0 12px;
+  }
+
+  .top-logo {
+    font-size: 21px;
+    white-space: nowrap;
+  }
+
+  .top-nav-actions {
+    gap: 4px;
+  }
+
+  .top-create-btn {
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  /* Main page spacing */
+  .feed-page,
+  .profile-page,
+  .create-page,
+  .search-page,
+  .activity-page,
+  .following-page {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .feed-page {
+    padding-top: 18px;
+    padding-bottom: 82px;
+  }
+
+  .profile-page {
+    padding-top: 12px;
+    padding-bottom: 82px;
+  }
+
+  .create-page {
+    padding-top: 18px;
+    padding-bottom: 82px;
+  }
+
+  .search-page,
+  .activity-page,
+  .following-page {
+    padding-top: 22px;
+    padding-bottom: 82px;
+  }
+
+  /* Feed */
+  .feed-header {
+    margin-bottom: 16px;
+  }
+
+  .feed-header h1 {
+    font-size: 24px;
+  }
+
+  .feed {
+    gap: 12px;
+  }
+
+  .post-card {
+    width: 100%;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin: 0;
+  }
+
+  .post-header {
+    padding: 12px 14px;
+  }
+
+  .post-content {
+    padding: 0 14px 14px;
+  }
+
+  .post-image {
+    width: 100%;
+    max-height: none;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+  }
+
+  .like-btn {
+    min-height: 44px;
+    font-size: 24px;
+  }
+
+  .comment-input {
+    min-height: 44px;
+  }
+
+  /* Auth screens */
+  .auth-page {
+    min-height: 100dvh;
+    padding: 16px;
+  }
+
+  .auth-card {
+    max-width: 100%;
+    padding: 28px 20px;
+    border-radius: 8px;
+  }
+
+  .auth-card h1 {
+    font-size: 29px;
+    margin-bottom: 18px;
+  }
+
+  .auth-card input,
+  .auth-card button {
+    min-height: 46px;
+  }
+
+  /* Create post */
+  .create-card {
+    width: 100%;
+    padding: 22px 16px;
+    border-radius: 10px;
+  }
+
+  .create-card h1 {
+    font-size: 22px;
+  }
+
+  .create-card input,
+  .create-card textarea,
+  .create-card button {
+    min-height: 46px;
+  }
+
+  .create-card textarea {
+    min-height: 120px;
+  }
+
+  /* Profile */
+  .profile-header {
+    width: 100%;
+    padding: 20px 0;
+    margin-bottom: 20px;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .profile-image,
+  .profile-placeholder {
+    width: 96px;
+    height: 96px;
+  }
+
+  .profile-placeholder {
+    font-size: 44px;
+  }
+
+  .profile-info {
+    width: 100%;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .profile-info h1 {
+    font-size: 22px;
+    word-break: break-word;
+  }
+
+  .profile-info h3 {
+    font-size: 15px;
+  }
+
+  .profile-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .profile-actions h1 {
+    width: 100%;
+    text-align: center;
+  }
+
+  .profile-actions > div {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 8px !important;
+  }
+
+  .profile-actions .follow-btn,
+  .profile-actions .message-btn {
+    min-width: 120px;
+    min-height: 42px;
+    padding: 9px 14px;
+    font-size: 14px;
+  }
+
+  .profile-stats {
+    width: 100%;
+    justify-content: space-around;
+    gap: 8px;
+    margin: 12px 0;
+  }
+
+  .profile-stats .stat {
+    min-width: 70px;
+  }
+
+  .profile-stats .stat strong {
+    font-size: 17px;
+  }
+
+  .profile-stats .stat span {
+    font-size: 12px;
+  }
+
+  .bio {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .my-posts {
+    margin-top: 12px;
+    padding-top: 18px;
+  }
+
+  .my-posts h2 {
+    margin-bottom: 18px;
+  }
+
+  .posts-grid {
+    width: calc(100% + 24px);
+    margin-left: -12px;
+    gap: 2px;
+  }
+
+  .grid-post {
+    border-radius: 0;
+  }
+
+  /* Search */
+  .search-container,
+  .activity-container,
+  .following-container {
+    width: 100%;
+    max-width: none;
+  }
+
+  .search-container h1,
+  .activity-header h1,
+  .following-container h1 {
+    font-size: 24px;
+  }
+
+  .search-box {
+    height: 46px;
+  }
+
+  .search-box input {
+    min-width: 0;
+    font-size: 16px;
+  }
+
+  .search-user {
+    padding: 12px 6px;
+    gap: 12px;
+  }
+
+  /* Activity */
+  .activity-header {
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .mark-all-btn {
+    min-height: 40px;
+    white-space: nowrap;
+  }
+
+  .notification-item {
+    padding: 13px 4px;
+    gap: 10px;
+  }
+
+  .notification-content p {
+    font-size: 13px;
+  }
+
+  /* Following */
+  .following-user {
+    width: 100%;
+    padding: 12px 2px;
+    gap: 8px;
+  }
+
+  .following-user-main {
+    gap: 10px;
+  }
+
+  .following-avatar,
+  .following-avatar-placeholder {
+    width: 46px;
+    height: 46px;
+  }
+
+  .following-actions {
+    gap: 4px;
+  }
+
+  .following-message-btn,
+  .following-manage-btn {
+    min-height: 38px;
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+
+  .following-message-btn {
+    min-width: 64px;
+  }
+
+  .following-manage-btn {
+    min-width: 70px;
+  }
+
+  .following-user-info {
+    min-width: 0;
+  }
+
+  .following-user-info strong,
+  .following-user-info span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 110px;
+  }
+
+  /* Messages */
+  .messages-page {
+    width: 100%;
+    min-height: calc(100dvh - 54px);
+    padding-bottom: 62px;
+  }
+
+  .messages-layout {
+    width: 100%;
+    height: calc(100dvh - 116px);
+    min-height: 0;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+  }
+
+  .conversation-sidebar {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .messages-title {
+    height: 58px;
+    padding: 0 14px;
+  }
+
+  .messages-title h1 {
+    font-size: 20px;
+  }
+
+  .conversation-item {
+    min-height: 68px;
+    padding: 10px 14px;
+  }
+
+  .conversation-item img,
+  .conversation-avatar {
+    width: 46px;
+    height: 46px;
+  }
+
+  .chat-header {
+    height: 58px;
+    min-height: 58px;
+    padding: 0 10px;
+    gap: 9px;
+  }
+
+  .chat-header img,
+  .chat-avatar {
+    width: 38px;
+    height: 38px;
+  }
+
+  .chat-back {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 24px;
+  }
+
+  .chat-messages {
+    padding: 12px 10px;
+    gap: 6px;
+  }
+
+  .message-bubble {
+    max-width: 82%;
+    padding: 8px 12px;
+  }
+
+  .message-bubble p {
+    line-height: 19px;
+    font-size: 14px;
+  }
+
+  .message-input {
+    min-height: 58px;
+    padding: 8px;
+    gap: 7px;
+  }
+
+  .message-input input {
+    min-width: 0;
+    height: 42px;
+    padding: 8px 13px;
+    font-size: 16px;
+  }
+
+  .message-input button {
+    min-width: 58px;
+    height: 42px;
+    padding: 0 12px;
+  }
+
+  /* Bottom navigation */
+  .bottom-nav {
+    height: calc(62px + env(safe-area-inset-bottom));
+    min-height: calc(62px + env(safe-area-inset-bottom));
+    padding: 0 4px env(safe-area-inset-bottom);
+  }
+
+  .bottom-nav-item {
+    min-width: 0;
+    min-height: 58px;
+    height: 58px;
+  }
+
+  .nav-icon {
+    font-size: 24px;
+  }
+
+  .bottom-profile-icon {
+    width: 25px;
+    height: 25px;
+  }
+
+  .nav-label {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 420px) {
+  .top-navbar {
+    padding: 0 9px;
+  }
+
+  .top-logo {
+    font-size: 19px;
+  }
+
+  .top-create-btn {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .profile-actions .follow-btn,
+  .profile-actions .message-btn {
+    min-width: 112px;
+  }
+
+  .following-user-info strong,
+  .following-user-info span {
+    max-width: 85px;
+  }
+
+  .following-message-btn {
+    min-width: 58px;
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+
+  .following-manage-btn {
+    min-width: 64px;
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+}
