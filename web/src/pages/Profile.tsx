@@ -17,9 +17,19 @@ interface Post {
   imageUrl?: string;
 }
 
+interface FollowStats {
+  followersCount: number;
+  followingCount: number;
+  isFollowing?: boolean;
+}
+
 function Profile() {
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [followStats, setFollowStats] = useState<FollowStats>({
+    followersCount: 0,
+    followingCount: 0,
+  });
 
   const [bio, setBio] = useState("");
   const [image, setImage] = useState<File | null>(null);
@@ -27,9 +37,12 @@ function Profile() {
   const loadProfile = async () => {
     try {
       const response = await api.get("/users/me");
-
       setUser(response.data);
       setBio(response.data.bio || "");
+      
+      // Load follow stats
+      const statsResponse = await api.get(`/follows/stats/${response.data.id}`);
+      setFollowStats(statsResponse.data);
     } catch (error) {
       console.error(error);
     }
@@ -104,9 +117,24 @@ function Profile() {
           <div className="profile-info">
             <h1>{user.username}</h1>
 
-            <h3>{user.name}</h3>
+            {user.name && <h3>{user.name}</h3>}
 
-            <p>{user.email}</p>
+            <div className="profile-stats">
+              <div className="stat">
+                <strong>{posts.length}</strong>
+                <span>posts</span>
+              </div>
+              <div className="stat">
+                <strong>{followStats.followersCount}</strong>
+                <span>followers</span>
+              </div>
+              <div className="stat">
+                <strong>{followStats.followingCount}</strong>
+                <span>following</span>
+              </div>
+            </div>
+
+            {user.bio && <p className="bio">{user.bio}</p>}
 
             <textarea
               value={bio}

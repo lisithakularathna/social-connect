@@ -4,9 +4,9 @@
 
 body {
   margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
-  background: #f5f7fb;
-  color: #1f2937;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: #fafafa;
+  color: #262626;
 }
 
 button,
@@ -22,15 +22,15 @@ button {
 /* Navbar */
 
 .navbar {
-  height: 64px;
+  height: 60px;
   background: white;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid #dbdbdb;
 
   display: flex;
   align-items: center;
   justify-content: space-between;
 
-  padding: 0 40px;
+  padding: 0 20px;
 
   position: sticky;
   top: 0;
@@ -39,66 +39,95 @@ button {
 
 .logo {
   text-decoration: none;
-  font-size: 22px;
-  font-weight: bold;
-  color: #2563eb;
+  font-size: 24px;
+  font-weight: 600;
+  font-family: 'Brush Script MT', cursive;
+  color: #262626;
+  letter-spacing: 1px;
 }
 
 .nav-links {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 24px;
 }
 
 .nav-links a {
   text-decoration: none;
-  color: #374151;
-  font-weight: 500;
+  color: #262626;
+  font-weight: 400;
+  font-size: 22px;
+  transition: transform 0.2s;
+  display: flex;
+  align-items: center;
+}
+
+.nav-links a:hover {
+  transform: scale(1.1);
 }
 
 .logout-btn {
   border: none;
-  background: #ef4444;
-  color: white;
-  padding: 9px 15px;
+  background: transparent;
+  color: #262626;
+  padding: 8px 16px;
   border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: opacity 0.2s;
+}
+
+.logout-btn:hover {
+  opacity: 0.6;
 }
 
 /* Auth */
 
 .auth-page {
   min-height: 100vh;
-
   display: flex;
   align-items: center;
   justify-content: center;
-
   padding: 20px;
+  background: #fafafa;
 }
 
 .auth-card {
   width: 100%;
-  max-width: 420px;
-
+  max-width: 400px;
   background: white;
-  padding: 35px;
-
-  border-radius: 16px;
-
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
-
+  padding: 40px;
+  border-radius: 8px;
+  border: 1px solid #dbdbdb;
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 12px;
 }
 
 .auth-card h1 {
-  margin: 0;
+  margin: 0 0 24px 0;
   text-align: center;
+  font-size: 32px;
+  font-weight: 600;
+  font-family: 'Brush Script MT', cursive;
+  color: #262626;
 }
 
 .auth-card p {
   text-align: center;
+  color: #8e8e8e;
+  font-size: 14px;
+  margin: 12px 0;
+}
+
+.auth-card p a {
+  color: #0095f6;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.auth-card p a:hover {
+  text-decoration: underline;
 }
 
 .auth-card input,
@@ -106,35 +135,47 @@ button {
 .create-card textarea,
 .profile-info textarea {
   width: 100%;
-
-  padding: 12px;
-
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-
+  padding: 12px 16px;
+  border: 1px solid #dbdbdb;
+  border-radius: 6px;
   outline: none;
+  font-size: 14px;
+  background: #fafafa;
+  transition: border-color 0.2s;
 }
 
 .auth-card input:focus,
 .create-card input:focus,
 .create-card textarea:focus,
 .profile-info textarea:focus {
-  border-color: #2563eb;
+  border-color: #a8a8a8;
+  background: white;
 }
 
 .auth-card button,
 .create-card button,
 .profile-info button {
   border: none;
-
-  background: #2563eb;
+  background: #0095f6;
   color: white;
-
   padding: 12px;
-
   border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.2s;
+}
 
-  font-weight: bold;
+.auth-card button:hover,
+.create-card button:hover,
+.profile-info button:hover {
+  background: #1877f2;
+}
+
+.auth-card button:disabled,
+.create-card button:disabled,
+.profile-info button:disabled {
+  background: #b2dffc;
+  cursor: not-allowed;
 }
 
 .error {
@@ -147,265 +188,383 @@ button {
 /* Feed */
 
 .feed-page {
-  max-width: 700px;
-  margin: auto;
-
-  padding: 35px 20px;
+  max-width: 614px;
+  margin: 0 auto;
+  padding: 30px 0;
+  min-height: calc(100vh - 60px);
 }
 
 .feed-header {
-  margin-bottom: 25px;
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.feed-header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  color: #262626;
+}
+
+.feed-header p {
+  color: #8e8e8e;
+  margin: 0;
+  font-size: 14px;
 }
 
 .feed {
   display: flex;
   flex-direction: column;
-  gap: 25px;
+  gap: 24px;
 }
 
 .post-card {
   background: white;
-
-  border-radius: 14px;
-
+  border: 1px solid #dbdbdb;
+  border-radius: 8px;
   overflow: hidden;
-
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
 }
 
 .post-header {
   display: flex;
   align-items: center;
-
   gap: 12px;
-
-  padding: 15px;
+  padding: 14px 16px;
 }
 
 .post-header small {
   display: block;
-  color: #6b7280;
+  color: #8e8e8e;
+  font-size: 12px;
+  margin-top: 2px;
 }
 
 .avatar {
-  width: 42px;
-  height: 42px;
-
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-
-  background: #2563eb;
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
   color: white;
-
   display: flex;
   align-items: center;
   justify-content: center;
-
-  font-weight: bold;
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .post-image {
   width: 100%;
   max-height: 600px;
-
   object-fit: cover;
-
   display: block;
+  background: #fafafa;
 }
 
 .post-content {
-  padding: 18px;
+  padding: 0 16px 16px;
 }
 
 .post-content h3 {
-  margin-top: 0;
+  margin: 8px 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: #262626;
+}
+
+.post-content p {
+  font-size: 14px;
+  color: #262626;
+  line-height: 18px;
+  margin: 8px 0;
 }
 
 .like-btn {
   border: none;
   background: transparent;
-
-  font-size: 18px;
-
+  font-size: 24px;
   padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #262626;
+  transition: opacity 0.2s;
+}
+
+.like-btn:hover {
+  opacity: 0.6;
 }
 
 .like-btn.liked {
-  color: #ef4444;
+  color: #ed4956;
 }
 
 /* Comments */
 
 .comments {
-  margin-top: 15px;
+  margin-top: 12px;
+  border-top: 1px solid #efefef;
+  padding-top: 12px;
+}
+
+.comments h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #8e8e8e;
+  margin: 0 0 12px 0;
 }
 
 .comment {
-  padding: 8px 0;
-
+  padding: 6px 0;
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.comment strong {
+  font-weight: 600;
+  color: #262626;
+}
+
+.comment span {
+  color: #262626;
 }
 
 .comment-input {
   display: flex;
   gap: 8px;
-
   margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #efefef;
 }
 
 .comment-input input {
   flex: 1;
+  border: none;
+  outline: none;
+  padding: 8px 0;
+  font-size: 14px;
+  background: transparent;
+}
 
-  border: 1px solid #d1d5db;
-
-  border-radius: 8px;
-
-  padding: 10px;
+.comment-input input::placeholder {
+  color: #8e8e8e;
 }
 
 .comment-input button {
   border: none;
+  background: transparent;
+  color: #0095f6;
+  padding: 0;
+  font-weight: 600;
+  font-size: 14px;
+  transition: opacity 0.2s;
+}
 
-  background: #2563eb;
-  color: white;
-
-  padding: 10px 15px;
-
-  border-radius: 8px;
+.comment-input button:hover {
+  opacity: 0.7;
 }
 
 /* Create */
 
 .create-page {
-  max-width: 700px;
-
-  margin: auto;
-
+  max-width: 600px;
+  margin: 0 auto;
   padding: 40px 20px;
 }
 
 .create-card {
   background: white;
-
-  padding: 30px;
-
-  border-radius: 15px;
-
+  padding: 32px;
+  border-radius: 8px;
+  border: 1px solid #dbdbdb;
   display: flex;
   flex-direction: column;
+  gap: 16px;
+}
 
-  gap: 15px;
-
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.06);
+.create-card h1 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #262626;
+  text-align: center;
 }
 
 .create-card textarea {
-  min-height: 150px;
-
+  min-height: 120px;
   resize: vertical;
 }
 
 /* Profile */
 
 .profile-page {
-  max-width: 1000px;
-
-  margin: auto;
-
-  padding: 40px 20px;
+  max-width: 935px;
+  margin: 0 auto;
+  padding: 30px 20px;
 }
 
 .profile-header {
-  background: white;
-
-  padding: 30px;
-
-  border-radius: 15px;
-
+  background: transparent;
+  padding: 30px 0;
   display: flex;
-
-  gap: 40px;
-
-  align-items: flex-start;
+  gap: 60px;
+  align-items: center;
+  margin-bottom: 44px;
 }
 
 .profile-image,
 .profile-placeholder {
-  width: 160px;
-  height: 160px;
-
+  width: 150px;
+  height: 150px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .profile-image {
   object-fit: cover;
+  border: 1px solid #dbdbdb;
 }
 
 .profile-placeholder {
-  background: #2563eb;
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
   color: white;
-
   display: flex;
   align-items: center;
   justify-content: center;
-
-  font-size: 55px;
-  font-weight: bold;
+  font-size: 64px;
+  font-weight: 300;
 }
 
 .profile-info {
   flex: 1;
-
   display: flex;
   flex-direction: column;
-
-  gap: 12px;
+  gap: 16px;
 }
 
 .profile-info h1 {
   margin: 0;
+  font-size: 28px;
+  font-weight: 300;
+  color: #262626;
 }
 
 .profile-info h3 {
   margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #262626;
 }
 
 .profile-info p {
-  color: #6b7280;
+  color: #262626;
+  font-size: 14px;
+  margin: 0;
+}
+
+.profile-info p.bio {
+  margin-top: 8px;
+}
+
+.profile-stats {
+  display: flex;
+  gap: 40px;
+  margin: 20px 0;
+}
+
+.profile-stats .stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.profile-stats .stat strong {
+  font-size: 18px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.profile-stats .stat span {
+  font-size: 14px;
+  color: #8e8e8e;
+  font-weight: 400;
 }
 
 .profile-info textarea {
-  min-height: 100px;
-
+  min-height: 80px;
   resize: vertical;
+}
+
+.follow-btn {
+  border: none;
+  background: #0095f6;
+  color: white;
+  padding: 8px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.follow-btn:hover {
+  background: #1877f2;
+}
+
+.follow-btn.following {
+  background: transparent;
+  border: 1px solid #dbdbdb;
+  color: #262626;
+}
+
+.follow-btn.following:hover {
+  background: #fafafa;
+  border-color: #a8a8a8;
 }
 
 /* My Posts */
 
 .my-posts {
-  margin-top: 35px;
+  margin-top: 24px;
+  border-top: 1px solid #dbdbdb;
+  padding-top: 24px;
+}
+
+.my-posts h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #8e8e8e;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-align: center;
+  margin-bottom: 28px;
 }
 
 .posts-grid {
   display: grid;
-
   grid-template-columns: repeat(3, 1fr);
-
-  gap: 5px;
+  gap: 28px;
 }
 
 .grid-post {
   aspect-ratio: 1;
-
   overflow: hidden;
+  background: #fafafa;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
 
-  background: #e5e7eb;
+.grid-post:hover {
+  opacity: 0.8;
 }
 
 .grid-post img {
   width: 100%;
   height: 100%;
-
   object-fit: cover;
 }
 
@@ -413,42 +572,110 @@ button {
 
 .empty {
   background: white;
-
-  padding: 40px;
-
+  padding: 60px 40px;
   text-align: center;
+  border-radius: 8px;
+  border: 1px solid #dbdbdb;
+}
 
-  border-radius: 12px;
+.empty h2 {
+  font-size: 22px;
+  font-weight: 300;
+  color: #262626;
+  margin: 0 0 12px 0;
+}
+
+.empty p {
+  color: #8e8e8e;
+  font-size: 14px;
+  margin: 0;
+}
+
+.loading {
+  text-align: center;
+  padding: 60px 40px;
+  color: #8e8e8e;
+  font-size: 14px;
+}
+
+.loading::after {
+  content: "";
+  display: block;
+  width: 24px;
+  height: 24px;
+  margin: 16px auto 0;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #0095f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* Mobile */
 
 @media (max-width: 700px) {
   .navbar {
-    padding: 0 15px;
+    padding: 0 16px;
+  }
+
+  .logo {
+    font-size: 20px;
   }
 
   .nav-links {
-    gap: 10px;
+    gap: 16px;
   }
 
   .nav-links a {
-    font-size: 14px;
+    font-size: 20px;
+  }
+
+  .feed-page {
+    padding: 0;
+  }
+
+  .post-card {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin-bottom: 16px;
   }
 
   .profile-header {
     flex-direction: column;
-
     align-items: center;
-
     text-align: center;
+    gap: 24px;
+  }
+
+  .profile-image,
+  .profile-placeholder {
+    width: 100px;
+    height: 100px;
+  }
+
+  .profile-placeholder {
+    font-size: 48px;
   }
 
   .profile-info {
     width: 100%;
+    align-items: center;
+  }
+
+  .profile-info h1 {
+    font-size: 24px;
   }
 
   .posts-grid {
-    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
+  }
+
+  .grid-post {
+    border-radius: 0;
   }
 }

@@ -1,12 +1,15 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 
 function Navbar() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const logout = () => {
     localStorage.removeItem("accessToken");
     navigate("/login");
   };
+
+  const isActive = (path: string) => location.pathname === path;
 
   return (
     <nav className="navbar">
@@ -15,11 +18,17 @@ function Navbar() {
       </Link>
 
       <div className="nav-links">
-        <Link to="/">Home</Link>
-        <Link to="/create">Create</Link>
-        <Link to="/profile">Profile</Link>
+        <Link to="/" title="Home">
+          {isActive("/") ? "⌂" : "⌂"}
+        </Link>
+        <Link to="/create" title="Create Post">
+          {isActive("/create") ? "⊞" : "⊞"}
+        </Link>
+        <Link to="/profile" title="Profile">
+          {isActive("/profile") ? "👤" : "👤"}
+        </Link>
 
-        <button onClick={logout} className="logout-btn">
+        <button onClick={logout} className="logout-btn" title="Logout">
           Logout
         </button>
       </div>
