@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 
 import { MessagesController } from './messages.controller.js';
 import { MessagesService } from './messages.service.js';
@@ -12,6 +13,7 @@ import { MessagesService } from './messages.service.js';
         expiresIn: '1d',
       },
     }),
+    NotificationsModule,
   ],
   controllers: [MessagesController],
   providers: [MessagesService],
