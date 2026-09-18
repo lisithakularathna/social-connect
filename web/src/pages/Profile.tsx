@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
+import BottomNav from "../components/BottomNav";
 import api from "../api/api";
 
 interface User {
@@ -90,6 +91,8 @@ function Profile() {
         <main className="profile-page">
           <p>Loading profile...</p>
         </main>
+        
+        <BottomNav />
       </>
     );
   }
@@ -184,6 +187,8 @@ function Profile() {
           )}
         </section>
       </main>
+      
+      <BottomNav />
     </>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
+import BottomNav from "../components/BottomNav";
 import PostCard from "../components/PostCard";
 import api from "../api/api";
 
@@ -83,6 +84,8 @@ function Home() {
           </div>
         )}
       </main>
+      
+      <BottomNav />
     </>
   );
 }

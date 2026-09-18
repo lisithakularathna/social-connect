@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import BottomNav from "../components/BottomNav";
 import api from "../api/api";
 
 function CreatePost() {
@@ -89,6 +90,8 @@ function CreatePost() {
           </button>
         </form>
       </main>
+      
+      <BottomNav />
     </>
   );
 }

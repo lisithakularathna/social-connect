@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import BottomNav from "../components/BottomNav";
 import api from "../api/api";
 
 interface User {
@@ -93,6 +94,8 @@ function UserProfile() {
             <p>Loading profile...</p>
           </div>
         </main>
+        
+        <BottomNav />
       </>
     );
   }
@@ -106,6 +109,8 @@ function UserProfile() {
             <h2>User not found</h2>
           </div>
         </main>
+        
+        <BottomNav />
       </>
     );
   }
@@ -186,6 +191,8 @@ function UserProfile() {
           )}
         </section>
       </main>
+      
+      <BottomNav />
     </>
   );
 }

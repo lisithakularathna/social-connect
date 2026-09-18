@@ -18,6 +18,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public */}
         <Route
           path="/login"
           element={<Login />}
@@ -28,6 +29,7 @@ function App() {
           element={<Register />}
         />
 
+        {/* Home */}
         <Route
           path="/"
           element={
@@ -37,6 +39,7 @@ function App() {
           }
         />
 
+        {/* Create Post */}
         <Route
           path="/create"
           element={
@@ -46,6 +49,7 @@ function App() {
           }
         />
 
+        {/* My Profile */}
         <Route
           path="/profile"
           element={
@@ -55,6 +59,7 @@ function App() {
           }
         />
 
+        {/* Other User Profile */}
         <Route
           path="/user/:userId"
           element={
@@ -64,6 +69,27 @@ function App() {
           }
         />
 
+        {/* Future Search */}
+        <Route
+          path="/search"
+          element={
+            <ProtectedRoute>
+              <div />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Future Activity */}
+        <Route
+          path="/activity"
+          element={
+            <ProtectedRoute>
+              <div />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Unknown */}
         <Route
           path="*"
           element={<Navigate to="/" replace />}
