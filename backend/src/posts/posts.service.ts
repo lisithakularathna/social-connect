@@ -174,6 +174,8 @@ export class PostsService {
     const updateData: {
       title?: string;
       content?: string;
+      backgroundColor?: string;
+      fontSize?: number;
     } = {};
 
     if (title !== undefined) {
@@ -182,14 +184,6 @@ export class PostsService {
 
     if (content !== undefined) {
       updateData.content = content;
-    }
-
-    if (backgroundColor !== undefined) {
-      updateData.backgroundColor = backgroundColor;
-    }
-
-    if (fontSize !== undefined) {
-      updateData.fontSize = Math.min(Math.max(Math.round(fontSize), 16), 48);
     }
 
     if (backgroundColor !== undefined) {
