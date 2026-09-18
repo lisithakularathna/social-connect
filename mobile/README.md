@@ -1,17 +1,68 @@
-# mobile
+# Social Connect Mobile
 
-A new Flutter project.
+Flutter mobile client for the Social Connect project.
 
-## Getting Started
+## Features
 
-This project is a starting point for a Flutter application.
+- JWT login and registration
+- Google sign-in
+- Home feed
+- Create posts with gallery/camera images
+- Likes and comments
+- User search
+- Profiles and follow/unfollow
+- Followers/following lists
+- Activity notifications
+- Dark/light theme
+- Direct messages and chat
+- Responsive Android/iOS Flutter UI
 
-A few resources to get you started if this is your first Flutter project:
+## Run
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+From the repository root:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+cd mobile
+flutter pub get
+flutter run
+```
+
+## API URL
+
+The app uses the existing NestJS backend.
+
+### Android emulator
+
+The default API URL is:
+
+```
+http://10.0.2.2:3000
+```
+
+This maps Android Emulator traffic to the host computer's localhost.
+
+### Physical Android phone
+
+Use the computer's LAN IPv4 address:
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://YOUR_PC_IP:3000
+```
+
+Example:
+
+```bash
+flutter run --dart-define=API_BASE_URL=http://192.168.1.10:3000
+```
+
+The phone and computer must be on the same Wi-Fi/LAN, and the backend must be running on port 3000.
+
+## Backend
+
+Start the backend before running the app:
+
+```bash
+cd backend
+npm install
+npm run start:dev
+```
