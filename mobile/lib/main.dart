@@ -3212,19 +3212,6 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
             ],
-          )
-              ),
-              const PopupMenuItem(
-                value: 'logout',
-                child: Row(
-                  children: [
-                    Icon(Icons.logout, size: 20, color: Colors.redAccent),
-                    SizedBox(width: 10),
-                    Text('Log out', style: TextStyle(color: Colors.redAccent)),
-                  ],
-                ),
-              ),
-            ],
           ),
         ],
         bottom: PreferredSize(
