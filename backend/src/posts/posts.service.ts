@@ -72,7 +72,7 @@ export class PostsService {
         .limit(safeLimit)
         .offset(offset)
         .all(),
-      db.orm.public.Post.count(),
+      db.orm.public.Post.all().then(posts => posts.length),
     ]);
 
     const totalCountNumber = Number(totalCount);
@@ -86,8 +86,8 @@ export class PostsService {
         authorId: post.authorId,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
-        likesCount: post.likes.length,
-        isLiked: post.likes.some((l: any) => l.userId === likerId),
+        likesCount: Array.isArray(post.likes) ? post.likes.length : 0,
+        isLiked: Array.isArray(post.likes) ? post.likes.some((l: any) => l.userId === likerId) : false,
         commentsCount: Array.isArray(post.comments) ? post.comments.length : 0,
         author: {
           id: post.author.id,

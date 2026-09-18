@@ -16,7 +16,7 @@ export class FollowsService {
     // Check if user exists
     const userExists = await db.orm.public.User
       .where({ id: followingId })
-      .count();
+      .all().then(res => res.length);
 
     if (Number(userExists) === 0) {
       throw new NotFoundException('User not found');
@@ -25,7 +25,7 @@ export class FollowsService {
     // Check if already following
     const existingFollow = await db.orm.public.Follow
       .where({ followerId, followingId })
-      .count();
+      .all().then(res => res.length);
 
     if (Number(existingFollow) > 0) {
       throw new BadRequestException('Already following this user');
@@ -44,7 +44,7 @@ export class FollowsService {
   async unfollowUser(followerId: number, followingId: number) {
     const existingFollow = await db.orm.public.Follow
       .where({ followerId, followingId })
-      .count();
+      .all().then(res => res.length);
 
     if (Number(existingFollow) === 0) {
       throw new NotFoundException('Not following this user');
@@ -92,15 +92,15 @@ export class FollowsService {
   async isFollowing(followerId: number, followingId: number): Promise<boolean> {
     const count = await db.orm.public.Follow
       .where({ followerId, followingId })
-      .count();
+      .all().then(res => res.length);
 
     return Number(count) > 0;
   }
 
   async getFollowStats(userId: number) {
     const [followersCount, followingCount] = await Promise.all([
-      db.orm.public.Follow.where({ followingId: userId }).count(),
-      db.orm.public.Follow.where({ followerId: userId }).count(),
+      db.orm.public.Follow.where({ followingId: userId }).all().then(res => res.length),
+      db.orm.public.Follow.where({ followerId: userId }).all().then(res => res.length),
     ]);
 
     return {
