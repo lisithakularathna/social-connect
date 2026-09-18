@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
 import api from "../api/api";
@@ -34,6 +35,7 @@ function Profile() {
 
   const [bio, setBio] = useState("");
   const [image, setImage] = useState<File | null>(null);
+  const navigate = useNavigate();
 
   const loadProfile = async () => {
     try {
@@ -118,8 +120,16 @@ function Profile() {
           </div>
 
           <div className="profile-info">
-            <h1>{user.username}</h1>
-
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h1 style={{ margin: 0 }}>{user.username}</h1>
+              <button
+                onClick={() => navigate(`/messages/${user.id}`)}
+                className="message-btn"
+                title="Test Messaging"
+              >
+                ✉ Messages
+              </button>
+            </div>
             {user.name && <h3>{user.name}</h3>}
 
             <div className="profile-stats">

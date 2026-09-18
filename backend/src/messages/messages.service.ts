@@ -14,11 +14,7 @@ export class MessagesService {
   ) {}
 
   async canMessage(currentUserId: number, targetUserId: number) {
-    if (currentUserId === targetUserId) {
-      return false;
-    }
-
-    // Any user can message any other user
+    // Allow messaging anyone including self (for testing)
     return true;
   }
 
@@ -77,12 +73,6 @@ export class MessagesService {
     targetUserId: number,
     content: string,
   ) {
-    if (currentUserId === targetUserId) {
-      throw new BadRequestException(
-        'You cannot message yourself.',
-      );
-    }
-
     const cleanContent = content?.trim();
 
     if (!cleanContent) {
