@@ -67,6 +67,11 @@ export class UsersController {
     );
   }
 
+  @Delete('me')
+  async deleteMe(@Request() request: any) {
+    return this.usersService.deleteAccount(request.user.sub);
+  }
+
   @Get('search')
   async searchUsers(
     @Query('q') q: string,
