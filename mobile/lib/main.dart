@@ -16,8 +16,9 @@ import 'package:flutter/foundation.dart';
 // For this Android build, the OAuth client is:
 // 991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com
 final GoogleSignIn _googleSignIn = GoogleSignIn(
-  clientId:
-      '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
+  clientId: kIsWeb
+      ? '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com'
+      : null,
   serverClientId: kIsWeb
       ? null
       : '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
@@ -173,6 +174,7 @@ Future<void> setThemePreference(ThemeMode mode) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await loadThemePreference();
+  await loadApiBaseUrl();
   runApp(const SocialConnectApp());
 }
 
@@ -526,6 +528,11 @@ class _LoginPageState extends State<LoginPage> {
         SnackBar(
           content: Text('Connection error: $e'),
           backgroundColor: Colors.redAccent,
+          action: SnackBarAction(
+            label: 'Change Server',
+            textColor: Colors.white,
+            onPressed: () => _showServerConfigDialog(context),
+          ),
         ),
       );
     } finally {
@@ -537,21 +544,89 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  void _showServerConfigDialog(BuildContext context) {
+    final controller = TextEditingController(text: apiBaseUrl);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.dns_outlined, color: Colors.deepPurple),
+            SizedBox(width: 8),
+            Text('Server Settings', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter your PC\'s Wi-Fi IP or tunnel URL:\n(e.g., http://192.168.43.50:3000)',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.url,
+              decoration: InputDecoration(
+                hintText: 'http://192.168.x.x:3000',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final val = controller.text.trim();
+              if (val.isNotEmpty) {
+                await setApiBaseUrl(val);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Server URL set to: $val')),
+                  );
+                }
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 60),
+        child: Stack(
+          children: [
+            Positioned(
+              top: 8,
+              right: 8,
+              child: IconButton(
+                icon: Icon(Icons.settings_outlined, color: isDark ? Colors.grey[400] : Colors.grey[700]),
+                tooltip: 'Server Settings',
+                onPressed: () => _showServerConfigDialog(context),
+              ),
+            ),
+            Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 400),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const SizedBox(height: 60),
 
                   // ── Logo ──
                   Center(
@@ -762,8 +837,10 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
         ),
-      ),
-    );
+      ],
+    ),
+  ),
+);
   }
 }
 

@@ -6,10 +6,28 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter/foundation.dart';
 
-const String apiBaseUrl = String.fromEnvironment(
+String apiBaseUrl = const String.fromEnvironment(
   'API_BASE_URL',
   defaultValue: kIsWeb ? 'http://localhost:3000' : 'http://10.0.2.2:3000',
 );
+
+Future<void> loadApiBaseUrl() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString('custom_api_base_url');
+    if (saved != null && saved.trim().isNotEmpty) {
+      apiBaseUrl = saved.trim();
+    }
+  } catch (_) {}
+}
+
+Future<void> setApiBaseUrl(String newUrl) async {
+  apiBaseUrl = newUrl.trim();
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('custom_api_base_url', apiBaseUrl);
+  } catch (_) {}
+}
 
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
