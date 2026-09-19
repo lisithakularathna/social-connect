@@ -873,6 +873,12 @@ class _HomePageState extends State<HomePage> {
               ),
               actions: [
                 IconButton(
+                  tooltip: 'Create',
+                  onPressed: _openCreateMenu,
+                  icon: Icon(Icons.add, color: isDark ? Colors.white : Colors.black, size: 28),
+                ),
+                IconButton(
+                  tooltip: 'Theme',
                   onPressed: () {
                     themeNotifier.value = themeNotifier.value == ThemeMode.light
                         ? ThemeMode.dark
@@ -887,8 +893,7 @@ class _HomePageState extends State<HomePage> {
                 ),
                 IconButton(
                   onPressed: logout,
-                  icon: Icon(Icons.logout,
-                      color: isDark ? Colors.white : Colors.black),
+                  icon: Icon(Icons.logout, color: isDark ? Colors.white : Colors.black),
                 ),
               ],
               bottom: PreferredSize(
@@ -927,13 +932,7 @@ class _HomePageState extends State<HomePage> {
           currentIndex: _currentNavIndex == 2 ? 0 : _currentNavIndex,
           onTap: (index) async {
             if (index == 2) {
-              final created = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const CreatePostPage(),
-                ),
-              );
-              if (created == true) loadPosts();
+              await _openCreateMenu();
               return;
             }
 
