@@ -14,6 +14,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 // For this Android build, the OAuth client is:
 // 991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com
 final GoogleSignIn _googleSignIn = GoogleSignIn(
+  clientId: '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
   serverClientId:
       '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
   scopes: ['email', 'profile'],
