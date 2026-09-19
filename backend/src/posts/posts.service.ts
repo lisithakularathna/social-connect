@@ -44,6 +44,23 @@ export class PostsService {
     };
   }
 
+  async repostPost(postId: number, userId: number) {
+    const posts = await db.orm.public.Post.where({ id: postId }).all();
+    const original = posts[0] ?? null;
+    if (!original) throw new NotFoundException('Post not found');
+    const title = `Reposted: ${original.title}`.slice(0, 255);
+    const content = original.content ? `${original.content}\n\n↻ Reposted from post #${original.id}` : `↻ Reposted from post #${original.id}`;
+    const post = await db.orm.public.Post.create({
+      title,
+      content,
+      imageUrl: original.imageUrl,
+      backgroundColor: original.backgroundColor,
+      fontSize: original.fontSize,
+      authorId: userId,
+    });
+    return { message: 'Post reposted successfully', post };
+  }
+
   async getAllPosts(
     currentUserId?: number,
     page?: number,
