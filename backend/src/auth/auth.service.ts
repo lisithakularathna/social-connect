@@ -88,6 +88,18 @@ export class AuthService {
     };
   }
 
+  async changePassword(userId: number, currentPassword: string, newPassword: string) {
+    if (!currentPassword || !newPassword || newPassword.length < 6) throw new ConflictException('New password must be at least 6 characters');
+    const users = await db.orm.public.User.where({ id: userId }).all();
+    const user = users[0];
+    if (!user) throw new UnauthorizedException('User not found');
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) throw new UnauthorizedException('Current password is incorrect');
+    const password = await bcrypt.hash(newPassword, 10);
+    await db.orm.public.User.where({ id: userId }).update({ password });
+    return { message: 'Password changed successfully' };
+  }
+
   async googleLogin(idToken: string) {
     // Google ID Token verify කිරීම
     let ticket;
