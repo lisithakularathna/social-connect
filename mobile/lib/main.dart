@@ -996,60 +996,99 @@ class _HomePageState extends State<HomePage> {
   // FEED
   // ====================================================
 
+
+  Future<void> _openCreateMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context, showDragHandle: true,
+      builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const ListTile(title: Text('Create', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('Share something with your followers')),
+        ListTile(leading: const Icon(Icons.add_circle_outline), title: const Text('Story'), subtitle: const Text('Photo or quick update · 24 hours'), onTap: () => Navigator.pop(sheetContext, 'story')),
+        ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Post'), subtitle: const Text('Photo, text, caption and tags'), onTap: () => Navigator.pop(sheetContext, 'post')),
+        ListTile(leading: const Icon(Icons.repeat_rounded), title: const Text('Repost'), subtitle: const Text('Repost a post from your feed'), onTap: () => Navigator.pop(sheetContext, 'repost')),
+        ListTile(leading: const Icon(Icons.person_add_alt_1_outlined), title: const Text('Tag people'), subtitle: const Text('Tag users while creating a post'), onTap: () => Navigator.pop(sheetContext, 'post')),
+      ])),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'story') {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateStoryPage()));
+      if (mounted) setState(() {});
+    } else {
+      final created = await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreatePostPage()));
+      if (created == true && mounted) loadPosts();
+    }
+  }
+
   Widget buildFeed() {
-    if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (errorMessage != null) {
-      return ListView(
-        children: [
-          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
-          Center(
-            child: Column(
-              children: [
-                const Icon(Icons.wifi_off_rounded, size: 60, color: Colors.grey),
-                const SizedBox(height: 12),
-                Text(errorMessage!, textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.grey)),
-                const SizedBox(height: 16),
-                ElevatedButton(onPressed: loadPosts, child: const Text('Retry')),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (posts.isEmpty) {
-      return ListView(
-        children: const [
-          SizedBox(height: 200),
-          Center(
-            child: Column(
-              children: [
-                Icon(Icons.photo_camera_outlined, size: 70, color: Colors.grey),
-                SizedBox(height: 12),
-                Text('No posts yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-                SizedBox(height: 4),
-                Text('Follow people to see their posts', style: TextStyle(color: Colors.grey)),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
-    return ListView.builder(
-      itemCount: posts.length,
-      itemBuilder: (context, index) {
-        return PostCard(post: posts[index]);
-      },
+    if (isLoading) return const Center(child: CircularProgressIndicator());
+    if (errorMessage != null) return ListView(children: [
+      SizedBox(height: MediaQuery.of(context).size.height * .3),
+      Center(child: Column(children: [
+        const Icon(Icons.wifi_off_rounded, size: 60, color: Colors.grey),
+        const SizedBox(height: 12), Text(errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+        const SizedBox(height: 16), ElevatedButton(onPressed: loadPosts, child: const Text('Retry')),
+      ])),
+    ]);
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        StoryStrip(posts: posts, onCreateStory: () async {
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateStoryPage()));
+          if (mounted) setState(() {});
+        }),
+        if (posts.isEmpty)
+          const Padding(padding: EdgeInsets.symmetric(vertical: 120), child: Column(children: [
+            Icon(Icons.photo_camera_outlined, size: 70, color: Colors.grey),
+            SizedBox(height: 12), Text('No posts yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            SizedBox(height: 4), Text('Follow people to see their posts', style: TextStyle(color: Colors.grey)),
+          ]))
+        else ...posts.map((post) => PostCard(post: post)),
+      ],
     );
   }
 }
 
 
+
+const String _localStoriesKey = 'localStories';
+Future<List<Map<String,dynamic>>> _loadLocalStories() async {
+  final p=await SharedPreferences.getInstance();final raw=p.getStringList(_localStoriesKey)??[];final valid=<Map<String,dynamic>>[];final now=DateTime.now();
+  for(final item in raw){try{final d=Map<String,dynamic>.from(jsonDecode(item));final created=DateTime.tryParse(d['createdAt']?.toString()??'');if(created!=null&&now.difference(created).inHours<24)valid.add(d);}catch(_){}}
+  await p.setStringList(_localStoriesKey,valid.map(jsonEncode).toList());return valid;
+}
+class StoryStrip extends StatefulWidget{
+ final List<dynamic> posts;final VoidCallback onCreateStory;const StoryStrip({super.key,required this.posts,required this.onCreateStory});
+ @override State<StoryStrip> createState()=>_StoryStripState();
+}
+class _StoryStripState extends State<StoryStrip>{
+ List<Map<String,dynamic>> localStories=[];
+ @override void initState(){super.initState();_load();}
+ Future<void> _load()async{final s=await _loadLocalStories();if(mounted)setState(()=>localStories=s);}
+ @override Widget build(BuildContext context){final seen=<String>{};final users=<dynamic>[];for(final p in widget.posts){final a=p['author'];final id=a?['id']?.toString()??a?['username']?.toString()??'';if(id.isNotEmpty&&seen.add(id))users.add(p);if(users.length>=8)break;}return SizedBox(height:112,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:10),children:[
+  _item('Your story',localStories.isNotEmpty?localStories.last['imageBase64']:null,true,widget.onCreateStory),
+  ...users.map((p){final a=p['author'];return _item((a?['username']??'User').toString(),a?['profileImageUrl']??p['imageUrl'],false,()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>StoryViewerPage(post:p))));}),
+ ]);}
+ Widget _item(String label,dynamic image,bool mine,VoidCallback tap)=>GestureDetector(onTap:tap,child:SizedBox(width:82,child:Column(children:[Stack(children:[
+  Container(width:68,height:68,padding:const EdgeInsets.all(3),decoration:BoxDecoration(shape:BoxShape.circle,gradient:LinearGradient(colors:mine?[Colors.grey,Colors.grey]:const[Color(0xFFFCAF45),Color(0xFFE1306C),Color(0xFF833AB4)])),child:Container(padding:const EdgeInsets.all(2),decoration:BoxDecoration(color:Theme.of(context).scaffoldBackgroundColor,shape:BoxShape.circle),child:_img(image))),
+  if(mine)Positioned(right:0,bottom:0,child:Container(width:23,height:23,decoration:BoxDecoration(color:Theme.of(context).colorScheme.primary,shape:BoxShape.circle,border:Border.all(color:Theme.of(context).scaffoldBackgroundColor,width:2)),child:const Icon(Icons.add,color:Colors.white,size:16))),
+ ]),const SizedBox(height:5),Text(label,maxLines:1,overflow:TextOverflow.ellipsis,style:const TextStyle(fontSize:11))]))); 
+ Widget _img(dynamic image){if(image==null||image.toString().isEmpty)return const CircleAvatar(radius:29,child:Icon(Icons.person_outline));final v=image.toString();if(v.length>200&&!v.startsWith('http')){try{return CircleAvatar(radius:29,backgroundImage:MemoryImage(base64Decode(v)));}catch(_){}}return CircleAvatar(radius:29,backgroundImage:NetworkImage(v));}
+}
+class CreateStoryPage extends StatefulWidget{const CreateStoryPage({super.key});@override State<CreateStoryPage> createState()=>_CreateStoryPageState();}
+class _CreateStoryPageState extends State<CreateStoryPage>{
+ final ImagePicker picker=ImagePicker();Uint8List? bytes;bool saving=false;
+ Future<void> pick()async{final x=await picker.pickImage(source:ImageSource.gallery,imageQuality:70,maxWidth:1080);if(x!=null){final b=await x.readAsBytes();if(mounted)setState(()=>bytes=b);}}
+ Future<void> publish()async{if(bytes==null)return;setState(()=>saving=true);final p=await SharedPreferences.getInstance();final stories=await _loadLocalStories();stories.add({'imageBase64':base64Encode(bytes!),'createdAt':DateTime.now().toIso8601String()});await p.setStringList(_localStoriesKey,stories.map(jsonEncode).toList());if(mounted){setState(()=>saving=false);ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Story added for 24 hours')));Navigator.pop(context);}}
+ @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Create Story'),centerTitle:true,actions:[TextButton(onPressed:bytes==null||saving?null:publish,child:const Text('Share'))]),body:Padding(padding:const EdgeInsets.all(20),child:Column(children:[
+  if(bytes!=null)ClipRRect(borderRadius:BorderRadius.circular(20),child:Image.memory(bytes!,height:420,width:double.infinity,fit:BoxFit.cover))
+  else Expanded(child:Center(child:Column(mainAxisSize:MainAxisSize.min,children:[const Icon(Icons.add_photo_alternate_rounded,size:70),const SizedBox(height:12),const Text('Add a photo to your story',style:TextStyle(fontSize:18,fontWeight:FontWeight.w700)),const SizedBox(height:18),ElevatedButton.icon(onPressed:pick,icon:const Icon(Icons.photo_library_outlined),label:const Text('Choose Photo'))]))),
+  if(bytes!=null)...[const SizedBox(height:20),ElevatedButton.icon(onPressed:pick,icon:const Icon(Icons.change_circle_outlined),label:const Text('Change Photo')),const SizedBox(height:10),const Text('Your story will be visible for 24 hours',style:TextStyle(color:Colors.grey))],
+ ]));
+}
+class StoryViewerPage extends StatelessWidget{
+ final dynamic post;const StoryViewerPage({super.key,required this.post});
+ @override Widget build(BuildContext context){final a=post['author'];final image=post['imageUrl'];return Scaffold(backgroundColor:Colors.black,appBar:AppBar(backgroundColor:Colors.transparent,foregroundColor:Colors.white,title:Text(a?['username']?.toString()??'Story')),body:Center(child:image!=null&&image.toString().isNotEmpty?Image.network(image.toString(),fit:BoxFit.contain,errorBuilder:(_,_,_)=>_text()):_text()));}
+ Widget _text()=>Padding(padding:const EdgeInsets.all(30),child:Text((post['content']?.toString().isNotEmpty==true?post['content']:post['title'])?.toString()??'Story',textAlign:TextAlign.center,style:const TextStyle(color:Colors.white,fontSize:28,fontWeight:FontWeight.w700)));
+}
 // ======================================================
 // POST CARD
 // ======================================================
@@ -1202,6 +1241,25 @@ class _PostCardState extends State<PostCard>
         ),
       ),
     );
+  }
+
+
+  Future<void> repostPost() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('accessToken');
+      if (token == null || token.isEmpty) return;
+      final response = await http.post(
+        Uri.parse(apiBaseUrl + '/posts/repost/' + widget.post['id'].toString()),
+        headers: {'Authorization': 'Bearer ' + token},
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post reposted to your feed')));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Repost failed (' + response.statusCode.toString() + ')')));
+      }
+    } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Repost error: $e'))); }
   }
 
   void _doubleTapLike() {
@@ -1417,6 +1475,15 @@ class _PostCardState extends State<PostCard>
                 const SizedBox(width: 4),
 
                 // Message / Share
+                GestureDetector(
+                  onTap: repostPost,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                    child: Icon(Icons.repeat_rounded, size: 25, color: isDark ? Colors.white : Colors.black),
+                  ),
+                ),
+                const SizedBox(width: 4),
+
                 GestureDetector(
                   onTap: openPostChat,
                   child: Padding(
@@ -5847,6 +5914,8 @@ class CreatePostPage extends StatefulWidget {
 class _CreatePostPageState extends State<CreatePostPage> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _contentController = TextEditingController();
+  final TextEditingController _tagController = TextEditingController();
+  final List<String> _taggedUsers = [];
   final ImagePicker _picker = ImagePicker();
 
   XFile? _selectedImage;
@@ -5864,6 +5933,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
+    _tagController.dispose();
     super.dispose();
   }
 
@@ -5935,8 +6005,10 @@ class _CreatePostPageState extends State<CreatePostPage> {
       request.fields['title'] = title;
 
       final content = _contentController.text.trim();
-      if (content.isNotEmpty) {
-        request.fields['content'] = content;
+      final tagText = _taggedUsers.isEmpty ? '' : '\n\nTagged: ' + _taggedUsers.map((u) => '@$u').join(' ');
+      final finalContent = content + tagText;
+      if (finalContent.isNotEmpty) {
+        request.fields['content'] = finalContent;
       }
 
       request.fields['backgroundColor'] = '#' + _selectedBackgroundColor.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
@@ -6196,6 +6268,18 @@ class _CreatePostPageState extends State<CreatePostPage> {
                 fillColor: theme.colorScheme.surface,
               ),
               textCapitalization: TextCapitalization.sentences,
+            ),
+
+            Container(
+              margin: const EdgeInsets.only(top: 16),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),border: Border.all(color: theme.colorScheme.outline.withValues(alpha: .25))),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start,children:[
+                Row(children:[const Icon(Icons.person_add_alt_1_outlined,size:20),const SizedBox(width:8),const Text('Tag people',style:TextStyle(fontWeight:FontWeight.w700))]),
+                const SizedBox(height:8),
+                TextField(controller:_tagController,decoration:const InputDecoration(hintText:'username (e.g. @choppa)',prefixIcon:Icon(Icons.alternate_email),isDense:true),onSubmitted:(v){final x=v.trim().replaceAll('@','');if(x.isNotEmpty&&!_taggedUsers.contains(x))setState((){_taggedUsers.add(x);_tagController.clear();});}),
+                if(_taggedUsers.isNotEmpty)...[const SizedBox(height:10),Wrap(spacing:6,runSpacing:6,children:_taggedUsers.map((u)=>InputChip(label:Text('@$u'),onDeleted:()=>setState(()=>_taggedUsers.remove(u))).toList()),const SizedBox(height:4),const Text('Tagged usernames are added to the post caption.',style:TextStyle(fontSize:11,color:Colors.grey))],
+              ]),
             ),
 
             // TEXT POST STYLING
