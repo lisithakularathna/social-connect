@@ -10,7 +10,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 // Google Sign-In instance
+// Google OAuth client created in Google Cloud Console.
+// For this Android build, the OAuth client is:
+// 991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com
 final GoogleSignIn _googleSignIn = GoogleSignIn(
+  serverClientId:
+      '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
   scopes: ['email', 'profile'],
 );
 
@@ -20,13 +25,24 @@ final GoogleSignIn _googleSignIn = GoogleSignIn(
 
 Future<String?> getGoogleIdToken() async {
   try {
-    await _googleSignIn.signOut(); // Always prompt account picker
+    // Sign out first so the user gets the Google account picker.
+    await _googleSignIn.signOut();
+
     final account = await _googleSignIn.signIn();
     if (account == null) return null;
+
     final auth = await account.authentication;
-    return auth.idToken;
+    final idToken = auth.idToken;
+
+    if (idToken == null || idToken.isEmpty) {
+      throw Exception(
+        'Google did not return an ID token. Check the OAuth client configuration.',
+      );
+    }
+
+    return idToken;
   } catch (e) {
-    return null;
+    throw Exception('Google sign-in failed: $e');
   }
 }
 
@@ -35,18 +51,18 @@ Future<void> handleGoogleSignIn(BuildContext context) async {
   final messenger = ScaffoldMessenger.of(context);
   final navigator = Navigator.of(context);
 
-  final idToken = await getGoogleIdToken();
-  if (idToken == null) {
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Google sign-in was cancelled'),
-        backgroundColor: Colors.orange,
-      ),
-    );
-    return;
-  }
-
   try {
+    final idToken = await getGoogleIdToken();
+
+    if (idToken == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Google sign-in was cancelled'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     final response = await http.post(
       Uri.parse('$apiBaseUrl/auth/google'),
       headers: {'Content-Type': 'application/json'},
