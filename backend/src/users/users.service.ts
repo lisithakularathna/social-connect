@@ -213,6 +213,13 @@ export class UsersService {
   };
 }
 
+  async deleteAccount(id: number) {
+    const user = await this.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+    await db.orm.public.User.where({ id }).delete();
+    return { message: 'Account deleted successfully' };
+  }
+
   async searchUsers(
     query: string,
     currentUserId: number,
