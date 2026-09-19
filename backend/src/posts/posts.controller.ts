@@ -50,6 +50,11 @@ export class PostsController {
     );
   }
 
+  @Post('repost/:id')
+  async repost(@Param('id') id: string, @Request() request: any) {
+    return this.postsService.repostPost(parseInt(id, 10), request.user.sub);
+  }
+
   @Get()
   async getAllPosts(
     @Request() request: any,
