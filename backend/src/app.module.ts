@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-
+import { ConfigModule } from '@nestjs/config';
 
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
@@ -14,10 +14,9 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { FollowsModule } from './follows/follows.module.js';
 import { MessagesModule } from './messages/messages.module.js';
 
-
-
 @Module({
   imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
     AuthModule,
     UsersModule,
     PostsModule,

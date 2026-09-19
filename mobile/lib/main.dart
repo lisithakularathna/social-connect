@@ -8,47 +8,98 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 
 // Google Sign-In instance
 // Google OAuth client created in Google Cloud Console.
 // For this Android build, the OAuth client is:
 // 991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com
 final GoogleSignIn _googleSignIn = GoogleSignIn(
-  clientId: '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
-  serverClientId:
+  clientId:
       '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
-  scopes: ['email', 'profile'],
+  serverClientId: kIsWeb
+      ? null
+      : '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
+  scopes: ['email', 'profile', 'openid'],
 );
 
 // ======================================================
 // GOOGLE SIGN-IN HELPER
 // ======================================================
 
+void _showAuthErrorDialog(BuildContext context, String title, String message) {
+  if (!context.mounted) return;
+  showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.redAccent),
+          const SizedBox(width: 8),
+          Expanded(child: Text(title)),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: SelectableText(
+          message,
+          style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+        ),
+      ),
+      actions: [
+        TextButton.icon(
+          icon: const Icon(Icons.copy, size: 16),
+          label: const Text('Copy Error'),
+          onPressed: () {
+            Clipboard.setData(ClipboardData(text: message));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Error copied to clipboard!')),
+            );
+          },
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+}
+
 Future<String?> getGoogleIdToken() async {
   try {
     // Sign out first so the user gets the Google account picker.
-    await _googleSignIn.signOut();
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
 
     final account = await _googleSignIn.signIn();
-    if (account == null) return null;
+    if (account == null) {
+      debugPrint('Google Sign-In: User dismissed account picker.');
+      return null;
+    }
 
     final auth = await account.authentication;
     final idToken = auth.idToken;
 
+    debugPrint('Google Sign-In: idToken is ${idToken != null ? "PRESENT" : "NULL"}');
+    debugPrint('Google Sign-In: accessToken is ${auth.accessToken != null ? "PRESENT" : "NULL"}');
+
     if (idToken == null || idToken.isEmpty) {
       throw Exception(
-        'Google did not return an ID token. Check the OAuth client configuration.',
+        'Google did not return an ID token.\nAccess Token present: ${auth.accessToken != null}\n'
+        'Check if your Google Cloud Web Client ID has http://localhost:8080 authorized.',
       );
     }
 
     return idToken;
   } catch (e) {
-    throw Exception('Google sign-in failed: $e');
+    debugPrint('Google Sign-In Error: $e');
+    rethrow;
   }
 }
 
 Future<void> handleGoogleSignIn(BuildContext context) async {
-  // Capture context-dependent objects before async gaps
   final messenger = ScaffoldMessenger.of(context);
   final navigator = Navigator.of(context);
 
@@ -64,6 +115,7 @@ Future<void> handleGoogleSignIn(BuildContext context) async {
       );
       return;
     }
+
     final response = await http.post(
       Uri.parse('$apiBaseUrl/auth/google'),
       headers: {'Content-Type': 'application/json'},
@@ -81,27 +133,17 @@ Future<void> handleGoogleSignIn(BuildContext context) async {
         (route) => false,
       );
     } else {
-      String errorMessage = 'Google sign-in failed';
+      String errorMessage = 'Status Code: ${response.statusCode}\nBody: ${response.body}';
       try {
         final err = jsonDecode(response.body);
         if (err['message'] != null) {
-          errorMessage = err['message'].toString();
+          errorMessage = 'Error: ${err['message']}\nStatus: ${response.statusCode}';
         }
       } catch (_) {}
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(errorMessage),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      _showAuthErrorDialog(context, 'Backend Error', errorMessage);
     }
   } catch (e) {
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Connection error: $e'),
-        backgroundColor: Colors.redAccent,
-      ),
-    );
+    _showAuthErrorDialog(context, 'Google Sign-In Error', '$e');
   }
 }
 

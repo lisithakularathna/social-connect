@@ -8,10 +8,20 @@ import * as bcrypt from 'bcrypt';
 import { OAuth2Client } from 'google-auth-library';
 import { db } from '../prisma/db.js';
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
 @Injectable()
 export class AuthService {
+  private googleClient: OAuth2Client | null = null;
+
+  private getGoogleClient(): OAuth2Client {
+    if (!this.googleClient) {
+      const clientId =
+        process.env.GOOGLE_CLIENT_ID ||
+        '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com';
+      this.googleClient = new OAuth2Client(clientId);
+    }
+    return this.googleClient;
+  }
+
   constructor(private readonly jwtService: JwtService) {}
 
   async register(
@@ -102,13 +112,17 @@ export class AuthService {
 
   async googleLogin(idToken: string) {
     // Google ID Token verify කිරීම
+    const clientId =
+      process.env.GOOGLE_CLIENT_ID ||
+      '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com';
     let ticket;
     try {
-      ticket = await googleClient.verifyIdToken({
+      ticket = await this.getGoogleClient().verifyIdToken({
         idToken,
-        audience: process.env.GOOGLE_CLIENT_ID,
+        audience: clientId,
       });
-    } catch {
+    } catch (err) {
+      console.error('Google token verification error:', err);
       throw new UnauthorizedException('Invalid Google token');
     }
 
