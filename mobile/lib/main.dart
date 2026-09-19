@@ -2671,256 +2671,19 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
 // SETTINGS
 // ======================================================
 
-class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
-
-  @override
-  State<SettingsPage> createState() => _SettingsPageState();
+class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
+class _SettingsPageState extends State<SettingsPage>{
+ bool likes=true,comments=true,followers=true,messages=true,mentions=true;
+ @override void initState(){super.initState();_load();}
+ Future<void> _load()async{final p=await SharedPreferences.getInstance();if(!mounted)return;setState((){likes=p.getBool('notif_likes')??true;comments=p.getBool('notif_comments')??true;followers=p.getBool('notif_followers')??true;messages=p.getBool('notif_messages')??true;mentions=p.getBool('notif_mentions')??true;});}
+ void _theme(){showModalBottomSheet(context:context,showDragHandle:true,builder:(s)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(c,m,_)=>SafeArea(child:Column(mainAxisSize:MainAxisSize.min,children:[const ListTile(title:Text('Appearance',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text('Choose Light, Dark or System')),RadioListTile(value:ThemeMode.light,groupValue:m,title:const Text('Light'),secondary:const Icon(Icons.light_mode_outlined),onChanged:(v)async{await setThemePreference(v!);if(s.mounted)Navigator.pop(s);}),RadioListTile(value:ThemeMode.dark,groupValue:m,title:const Text('Dark'),secondary:const Icon(Icons.dark_mode_outlined),onChanged:(v)async{await setThemePreference(v!);if(s.mounted)Navigator.pop(s);}),RadioListTile(value:ThemeMode.system,groupValue:m,title:const Text('System'),secondary:const Icon(Icons.brightness_auto_outlined),onChanged:(v)async{await setThemePreference(v!);if(s.mounted)Navigator.pop(s);})]))));}
+ Widget tile(IconData i,String t,String st,VoidCallback f)=>ListTile(contentPadding:const EdgeInsets.symmetric(horizontal:4),leading:Icon(i),title:Text(t,style:const TextStyle(fontWeight:FontWeight.w600)),subtitle:Text(st),trailing:const Icon(Icons.chevron_right_rounded),onTap:f);
+ void _notifications()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>NotificationSettingsPage(likes:likes,comments:comments,followers:followers,messages:messages,mentions:mentions))).then((_)=>_load());
+ @override Widget build(BuildContext context){final m=themeNotifier.value;final n=m==ThemeMode.dark?'Dark':m==ThemeMode.system?'System':'Light';return Scaffold(appBar:AppBar(title:const Text('Settings'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[const Text('Preferences',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),const SizedBox(height:6),tile(Icons.brightness_6_outlined,'Theme',n,_theme),tile(Icons.notifications_none_rounded,'Notification Settings','Likes, comments, followers, messages and mentions',_notifications),tile(Icons.lock_outline,'Privacy','Private account, message privacy and blocked users',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PrivacySettingsPage()))),const SizedBox(height:18),const Text('Account & Security',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),const SizedBox(height:6),tile(Icons.volume_off_outlined,'Muted Users','Manage accounts you have muted',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const MutedUsersPage()))),tile(Icons.lock_reset_outlined,'Change Password','Update your account password',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const ChangePasswordPage()))),tile(Icons.security_outlined,'Two-Factor Authentication','Extra security for your account',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const TwoFactorPage()))),tile(Icons.circle_outlined,'Activity Status','Show or hide your active status',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const ActivityStatusPage()))),tile(Icons.delete_outline,'Delete Account','Permanently delete your account',()=>deleteAccount(context)),tile(Icons.logout_rounded,'Logout','Sign out of this device',()=>logoutUser(context))]));}
 }
-
-class _SettingsPageState extends State<SettingsPage> {
-  bool likes = true;
-  bool comments = true;
-  bool followers = true;
-  bool messages = true;
-  bool mentions = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNotificationSettings();
-  }
-
-  Future<void> _loadNotificationSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      likes = prefs.getBool('notif_likes') ?? true;
-      comments = prefs.getBool('notif_comments') ?? true;
-      followers = prefs.getBool('notif_followers') ?? true;
-      messages = prefs.getBool('notif_messages') ?? true;
-      mentions = prefs.getBool('notif_mentions') ?? true;
-    });
-  }
-
-  Future<void> _setNotification(String key, bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(key, value);
-  }
-
-  void _openThemeSettings() {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) {
-        return ValueListenableBuilder<ThemeMode>(
-          valueListenable: themeNotifier,
-          builder: (context, mode, _) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Appearance', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 8),
-                    const Text('Choose how Social Connect looks on your device.', style: TextStyle(color: Colors.grey)),
-                    const SizedBox(height: 12),
-                    RadioListTile<ThemeMode>(
-                      value: ThemeMode.light,
-                      groupValue: mode,
-                      title: const Text('Light'),
-                      secondary: const Icon(Icons.light_mode_outlined),
-                      onChanged: (value) async {
-                        await setThemePreference(value!);
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
-                      },
-                    ),
-                    RadioListTile<ThemeMode>(
-                      value: ThemeMode.dark,
-                      groupValue: mode,
-                      title: const Text('Dark'),
-                      secondary: const Icon(Icons.dark_mode_outlined),
-                      onChanged: (value) async {
-                        await setThemePreference(value!);
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
-                      },
-                    ),
-                    RadioListTile<ThemeMode>(
-                      value: ThemeMode.system,
-                      groupValue: mode,
-                      title: const Text('System default'),
-                      secondary: const Icon(Icons.brightness_auto_outlined),
-                      onChanged: (value) async {
-                        await setThemePreference(value!);
-                        if (sheetContext.mounted) Navigator.pop(sheetContext);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _settingTile({
-    required IconData icon,
-    required String title,
-    String? subtitle,
-    VoidCallback? onTap,
-  }) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: Icon(icon),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: subtitle == null ? null : Text(subtitle),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: onTap,
-    );
-  }
-
-  void _openNotificationSettings() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => NotificationSettingsPage(
-          likes: likes,
-          comments: comments,
-          followers: followers,
-          messages: messages,
-          mentions: mentions,
-        ),
-      ),
-    ).then((_) => _loadNotificationSettings());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final mode = themeNotifier.value;
-    final themeName = mode == ThemeMode.dark ? 'Dark' : mode == ThemeMode.system ? 'System' : 'Light';
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings'), centerTitle: true),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          const Text('Preferences', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.grey)),
-          const SizedBox(height: 6),
-          _settingTile(
-            icon: Icons.brightness_6_outlined,
-            title: 'Theme',
-            subtitle: themeName,
-            onTap: _openThemeSettings,
-          ),
-          _settingTile(
-            icon: Icons.notifications_none_rounded,
-            title: 'Notification Settings',
-            subtitle: 'Likes, comments, followers, messages and mentions',
-            onTap: _openNotificationSettings,
-          ),
-          _settingTile(
-            icon: Icons.lock_outline,
-            title: 'Privacy',
-            subtitle: 'Private account, message privacy and blocked users',
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacySettingsPage())),
-          ),
-        ],
-      ),
-    );
-  }
+class NotificationSettingsPage extends StatefulWidget{final bool likes,comments,followers,messages,mentions;const NotificationSettingsPage({super.key,required this.likes,required this.comments,required this.followers,required this.messages,required this.mentions});@override State<NotificationSettingsPage> createState()=>_NotificationSettingsPageState();}
+class _NotificationSettingsPageState extends State<NotificationSettingsPage>{late bool likes,comments,followers,messages,mentions;@override void initState(){super.initState();likes=widget.likes;comments=widget.comments;followers=widget.followers;messages=widget.messages;mentions=widget.mentions;}Future<void> ch(String k,bool v)async{final p=await SharedPreferences.getInstance();await p.setBool(k,v);}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Notifications'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[const Text('Push notifications',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),SwitchListTile(title:const Text('Likes'),subtitle:const Text('When someone likes your post'),value:likes,onChanged:(v){setState(()=>likes=v);ch('notif_likes',v);}),SwitchListTile(title:const Text('Comments'),subtitle:const Text('When someone comments on your post'),value:comments,onChanged:(v){setState(()=>comments=v);ch('notif_comments',v);}),SwitchListTile(title:const Text('New followers'),subtitle:const Text('When someone follows you'),value:followers,onChanged:(v){setState(()=>followers=v);ch('notif_followers',v);}),SwitchListTile(title:const Text('Messages'),subtitle:const Text('New direct messages'),value:messages,onChanged:(v){setState(()=>messages=v);ch('notif_messages',v);}),SwitchListTile(title:const Text('Mentions'),subtitle:const Text('When someone mentions you'),value:mentions,onChanged:(v){setState(()=>mentions=v);ch('notif_mentions',v);})]));}
 }
-
-class NotificationSettingsPage extends StatefulWidget {
-  final bool likes;
-  final bool comments;
-  final bool followers;
-  final bool messages;
-  final bool mentions;
-
-  const NotificationSettingsPage({
-    super.key,
-    required this.likes,
-    required this.comments,
-    required this.followers,
-    required this.messages,
-    required this.mentions,
-  });
-
-  @override
-  State<NotificationSettingsPage> createState() => _NotificationSettingsPageState();
-}
-
-class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
-  late bool likes;
-  late bool comments;
-  late bool followers;
-  late bool messages;
-  late bool mentions;
-
-  @override
-  void initState() {
-    super.initState();
-    likes = widget.likes;
-    comments = widget.comments;
-    followers = widget.followers;
-    messages = widget.messages;
-    mentions = widget.mentions;
-  }
-
-  Future<void> _change(String key, bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(key, value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Notifications'), centerTitle: true),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          const Text('Push notifications', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.grey)),
-          const SizedBox(height: 8),
-          SwitchListTile(
-            title: const Text('Likes'),
-            subtitle: const Text('When someone likes your post'),
-            value: likes,
-            onChanged: (v) { setState(() => likes = v); _change('notif_likes', v); },
-          ),
-          SwitchListTile(
-            title: const Text('Comments'),
-            subtitle: const Text('When someone comments on your post'),
-            value: comments,
-            onChanged: (v) { setState(() => comments = v); _change('notif_comments', v); },
-          ),
-          SwitchListTile(
-            title: const Text('New followers'),
-            subtitle: const Text('When someone follows you'),
-            value: followers,
-            onChanged: (v) { setState(() => followers = v); _change('notif_followers', v); },
-          ),
-          SwitchListTile(
-            title: const Text('Messages'),
-            subtitle: const Text('New direct messages'),
-            value: messages,
-            onChanged: (v) { setState(() => messages = v); _change('notif_messages', v); },
-          ),
-          SwitchListTile(
-            title: const Text('Mentions'),
-            subtitle: const Text('When someone mentions you'),
-            value: mentions,
-            onChanged: (v) { setState(() => mentions = v); _change('notif_mentions', v); },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 void _openThemeSettingsFromProfile(BuildContext context) {
   showModalBottomSheet(
     context: context,
@@ -2961,6 +2724,53 @@ void _openThemeSettingsFromProfile(BuildContext context) {
   );
 }
 
+
+// ======================================================
+// MORE ACCOUNT SETTINGS
+// ======================================================
+const String _mutedUsersKey='mutedUsers';
+const String _twoFactorKey='twoFactorEnabled';
+const String _activityStatusKey='activityStatus';
+
+Future<List<Map<String,dynamic>>> loadMutedUsers()async{
+  final p=await SharedPreferences.getInstance(); final raw=p.getStringList(_mutedUsersKey)??[];
+  return raw.map((x){try{final d=jsonDecode(x);return d is Map?Map<String,dynamic>.from(d):<String,dynamic>{};}catch(_){return <String,dynamic>{};}}).where((x)=>x.isNotEmpty).toList();
+}
+Future<void> saveMutedUsers(List<Map<String,dynamic>> users)async{final p=await SharedPreferences.getInstance();await p.setStringList(_mutedUsersKey,users.map(jsonEncode).toList());}
+
+class MutedUsersPage extends StatefulWidget{const MutedUsersPage({super.key});@override State<MutedUsersPage> createState()=>_MutedUsersPageState();}
+class _MutedUsersPageState extends State<MutedUsersPage>{
+ final controller=TextEditingController();List<Map<String,dynamic>> muted=[];List<dynamic> results=[];bool searching=false;
+ @override void initState(){super.initState();_load();}@override void dispose(){controller.dispose();super.dispose();}
+ Future<void> _load()async{final v=await loadMutedUsers();if(mounted)setState(()=>muted=v);}
+ Future<void> _search(String value)async{final q=value.trim();if(q.isEmpty){if(mounted)setState(()=>results=[]);return;}setState(()=>searching=true);try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');if(t==null||t.isEmpty)return;final res=await http.get(Uri.parse('$apiBaseUrl/users/search?q='+Uri.encodeQueryComponent(q)),headers:{'Authorization':'Bearer $t'});if(res.statusCode==200){final d=jsonDecode(res.body);if(mounted)setState(()=>results=d is List?d:[]);}}catch(_){}finally{if(mounted)setState(()=>searching=false);}}
+ Future<void> _mute(dynamic u)async{final id=u['id'];if(id==null||muted.any((x)=>x['id'].toString()==id.toString()))return;final item=<String,dynamic>{'id':id,'username':u['username']??'user','name':u['name']??'','profileImageUrl':u['profileImageUrl']};final updated=[...muted,item];await saveMutedUsers(updated);if(!mounted)return;setState((){muted=updated;results=[];controller.clear();});ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('@'+item['username'].toString()+' muted')));}
+ Future<void> _unmute(Map<String,dynamic> u)async{final updated=muted.where((x)=>x['id'].toString()!=u['id'].toString()).toList();await saveMutedUsers(updated);if(mounted)setState(()=>muted=updated);}
+ Widget _avatar(dynamic url)=>url!=null&&url.toString().isNotEmpty?CircleAvatar(radius:24,backgroundImage:NetworkImage(url.toString())):const CircleAvatar(radius:24,child:Icon(Icons.person_outline));
+ @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Muted Users'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[
+  TextField(controller:controller,onChanged:_search,decoration:InputDecoration(hintText:'Search username to mute',prefixIcon:const Icon(Icons.search),suffixIcon:searching?const Padding(padding:EdgeInsets.all(12),child:SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))):null)),
+  if(results.isNotEmpty)...[const SizedBox(height:16),const Text('Search results',style:TextStyle(fontWeight:FontWeight.w800,color:Colors.grey)),...results.map((u)=>ListTile(leading:_avatar(u['profileImageUrl']),title:Text(u['username']?.toString()??'user'),subtitle:Text(u['name']?.toString()??''),trailing:const Icon(Icons.volume_off_outlined),onTap:()=>_mute(u)))],
+  const SizedBox(height:20),const Text('Muted accounts',style:TextStyle(fontWeight:FontWeight.w800,color:Colors.grey)),
+  if(muted.isEmpty)const Padding(padding:EdgeInsets.symmetric(vertical:32),child:Center(child:Text('No muted users')))else...muted.map((u)=>ListTile(leading:_avatar(u['profileImageUrl']),title:Text(u['username']?.toString()??'user'),subtitle:Text(u['name']?.toString()??''),trailing:TextButton(onPressed:()=>_unmute(u),child:const Text('Unmute')))),
+ ]));
+}
+
+class ChangePasswordPage extends StatefulWidget{const ChangePasswordPage({super.key});@override State<ChangePasswordPage> createState()=>_ChangePasswordPageState();}
+class _ChangePasswordPageState extends State<ChangePasswordPage>{
+ final current=TextEditingController(),next=TextEditingController(),confirm=TextEditingController();bool loading=false;
+ @override void dispose(){current.dispose();next.dispose();confirm.dispose();super.dispose();}
+ Future<void> _change()async{if(next.text.length<6){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('New password must be at least 6 characters')));return;}if(next.text!=confirm.text){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Passwords do not match')));return;}setState(()=>loading=true);try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');final res=await http.post(Uri.parse('$apiBaseUrl/auth/change-password'),headers:{'Content-Type':'application/json','Authorization':'Bearer $t'},body:jsonEncode({'currentPassword':current.text,'newPassword':next.text}));if(!mounted)return;if(res.statusCode==200){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Password changed successfully')));Navigator.pop(context);}else{String m='Failed to change password';try{final d=jsonDecode(res.body);m=d['message']?.toString()??m;}catch(_){ }ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(m)));}}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Connection error: $e')));}finally{if(mounted)setState(()=>loading=false);}}
+ @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Change Password'),centerTitle:true),body:ListView(padding:const EdgeInsets.all(20),children:[TextField(controller:current,obscureText:true,decoration:const InputDecoration(labelText:'Current password',prefixIcon:Icon(Icons.lock_outline))),const SizedBox(height:14),TextField(controller:next,obscureText:true,decoration:const InputDecoration(labelText:'New password',prefixIcon:Icon(Icons.lock_reset_outlined))),const SizedBox(height:14),TextField(controller:confirm,obscureText:true,decoration:const InputDecoration(labelText:'Confirm new password',prefixIcon:Icon(Icons.check_circle_outline))),const SizedBox(height:24),SizedBox(height:50,child:ElevatedButton(onPressed:loading?null:_change,child:loading?const CircularProgressIndicator():const Text('Change Password')))]));
+}
+
+class TwoFactorPage extends StatefulWidget{const TwoFactorPage({super.key});@override State<TwoFactorPage> createState()=>_TwoFactorPageState();}
+class _TwoFactorPageState extends State<TwoFactorPage>{bool enabled=false;@override void initState(){super.initState();_load();}Future<void> _load()async{final p=await SharedPreferences.getInstance();if(mounted)setState(()=>enabled=p.getBool(_twoFactorKey)??false);}Future<void> _toggle(bool v)async{final p=await SharedPreferences.getInstance();await p.setBool(_twoFactorKey,v);if(mounted)setState(()=>enabled=v);}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Two-Factor Authentication'),centerTitle:true),body:ListView(children:[SwitchListTile(secondary:const Icon(Icons.security_outlined),title:const Text('Two-Factor Authentication',style:TextStyle(fontWeight:FontWeight.w600)),subtitle:Text(enabled?'Enabled on this device':'Disabled'),value:enabled,onChanged:_toggle),const Padding(padding:EdgeInsets.all(20),child:Text('2FA is currently a local setting. A production OTP/authenticator verification flow can be connected to the backend later.',style:TextStyle(color:Colors.grey)))]));}
+
+class ActivityStatusPage extends StatefulWidget{const ActivityStatusPage({super.key});@override State<ActivityStatusPage> createState()=>_ActivityStatusPageState();}
+class _ActivityStatusPageState extends State<ActivityStatusPage>{bool enabled=true;@override void initState(){super.initState();_load();}Future<void> _load()async{final p=await SharedPreferences.getInstance();if(mounted)setState(()=>enabled=p.getBool(_activityStatusKey)??true);}Future<void> _toggle(bool v)async{final p=await SharedPreferences.getInstance();await p.setBool(_activityStatusKey,v);if(mounted)setState(()=>enabled=v);}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Activity Status'),centerTitle:true),body:SwitchListTile(secondary:const Icon(Icons.circle_outlined),title:const Text('Show Activity Status',style:TextStyle(fontWeight:FontWeight.w600)),subtitle:const Text('Let others see when you are active'),value:enabled,onChanged:_toggle));}
+
+Future<void> logoutUser(BuildContext context)async{final p=await SharedPreferences.getInstance();await p.remove('accessToken');if(!context.mounted)return;Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const LoginPage()),(route)=>false);}
+Future<void> deleteAccount(BuildContext context)async{final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Delete Account'),content:const Text('This permanently deletes your account, posts, likes, comments and follows. This action cannot be undone.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),ElevatedButton(style:ElevatedButton.styleFrom(backgroundColor:Colors.red,foregroundColor:Colors.white),onPressed:()=>Navigator.pop(ctx,true),child:const Text('Delete'))]));if(ok!=true)return;try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');final res=await http.delete(Uri.parse('$apiBaseUrl/users/me'),headers:{'Authorization':'Bearer $t'});if(!context.mounted)return;if(res.statusCode==200){await p.clear();if(!context.mounted)return;Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const LoginPage()),(route)=>false);}else{ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Failed to delete account ('+res.statusCode.toString()+')')));}}catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Connection error: $e')));}}
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
