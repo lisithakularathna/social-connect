@@ -409,6 +409,13 @@
                   "kind": "scalar"
                 }
               },
+              "backgroundColor": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
+                }
+              },
               "content": {
                 "nullable": true,
                 "type": {
@@ -420,6 +427,13 @@
                 "nullable": false,
                 "type": {
                   "codecId": "pg/timestamptz-string@1",
+                  "kind": "scalar"
+                }
+              },
+              "fontSize": {
+                "nullable": true,
+                "type": {
+                  "codecId": "pg/int4@1",
                   "kind": "scalar"
                 }
               },
@@ -504,11 +518,17 @@
                 "authorId": {
                   "column": "authorId"
                 },
+                "backgroundColor": {
+                  "column": "backgroundColor"
+                },
                 "content": {
                   "column": "content"
                 },
                 "createdAt": {
                   "column": "createdAt"
+                },
+                "fontSize": {
+                  "column": "fontSize"
                 },
                 "id": {
                   "column": "id"
@@ -1219,6 +1239,11 @@
                   "nativeType": "int4",
                   "nullable": false
                 },
+                "backgroundColor": {
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": true
+                },
                 "content": {
                   "codecId": "pg/text@1",
                   "nativeType": "text",
@@ -1232,6 +1257,11 @@
                   },
                   "nativeType": "timestamptz",
                   "nullable": false
+                },
+                "fontSize": {
+                  "codecId": "pg/int4@1",
+                  "nativeType": "int4",
+                  "nullable": true
                 },
                 "id": {
                   "codecId": "pg/int4@1",
@@ -1467,7 +1497,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "a6f899af85d2df66c902679e248d33056d25de729fe13750de16289eb7991fd5"
+    "storageHash": "9e3143c24bf01c075dd0525f36daf0d6428c58be159ae1725678cb5aad72f1f6"
   },
   "execution": {
     "executionHash": "ad7c6fdfba4aace261c4a141ec63a8643dfe53ea36a5a57e07247a0c3b2fe3a1",

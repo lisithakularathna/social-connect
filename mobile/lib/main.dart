@@ -1065,7 +1065,7 @@ class _StoryStripState extends State<StoryStrip>{
  @override Widget build(BuildContext context){final seen=<String>{};final users=<dynamic>[];for(final p in widget.posts){final a=p['author'];final id=a?['id']?.toString()??a?['username']?.toString()??'';if(id.isNotEmpty&&seen.add(id))users.add(p);if(users.length>=8)break;}return SizedBox(height:112,child:ListView(scrollDirection:Axis.horizontal,padding:const EdgeInsets.symmetric(horizontal:10,vertical:10),children:[
   _item('Your story',localStories.isNotEmpty?localStories.last['imageBase64']:null,true,widget.onCreateStory),
   ...users.map((p){final a=p['author'];return _item((a?['username']??'User').toString(),a?['profileImageUrl']??p['imageUrl'],false,()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>StoryViewerPage(post:p))));}),
- ]);}
+ ]));}
  Widget _item(String label,dynamic image,bool mine,VoidCallback tap)=>GestureDetector(onTap:tap,child:SizedBox(width:82,child:Column(children:[Stack(children:[
   Container(width:68,height:68,padding:const EdgeInsets.all(3),decoration:BoxDecoration(shape:BoxShape.circle,gradient:LinearGradient(colors:mine?[Colors.grey,Colors.grey]:const[Color(0xFFFCAF45),Color(0xFFE1306C),Color(0xFF833AB4)])),child:Container(padding:const EdgeInsets.all(2),decoration:BoxDecoration(color:Theme.of(context).scaffoldBackgroundColor,shape:BoxShape.circle),child:_img(image))),
   if(mine)Positioned(right:0,bottom:0,child:Container(width:23,height:23,decoration:BoxDecoration(color:Theme.of(context).colorScheme.primary,shape:BoxShape.circle,border:Border.all(color:Theme.of(context).scaffoldBackgroundColor,width:2)),child:const Icon(Icons.add,color:Colors.white,size:16))),
@@ -1081,7 +1081,7 @@ class _CreateStoryPageState extends State<CreateStoryPage>{
   if(bytes!=null)ClipRRect(borderRadius:BorderRadius.circular(20),child:Image.memory(bytes!,height:420,width:double.infinity,fit:BoxFit.cover))
   else Expanded(child:Center(child:Column(mainAxisSize:MainAxisSize.min,children:[const Icon(Icons.add_photo_alternate_rounded,size:70),const SizedBox(height:12),const Text('Add a photo to your story',style:TextStyle(fontSize:18,fontWeight:FontWeight.w700)),const SizedBox(height:18),ElevatedButton.icon(onPressed:pick,icon:const Icon(Icons.photo_library_outlined),label:const Text('Choose Photo'))]))),
   if(bytes!=null)...[const SizedBox(height:20),ElevatedButton.icon(onPressed:pick,icon:const Icon(Icons.change_circle_outlined),label:const Text('Change Photo')),const SizedBox(height:10),const Text('Your story will be visible for 24 hours',style:TextStyle(color:Colors.grey))],
- ]));
+ ])));
 }
 class StoryViewerPage extends StatelessWidget{
  final dynamic post;const StoryViewerPage({super.key,required this.post});
@@ -2749,7 +2749,6 @@ class _SettingsPageState extends State<SettingsPage>{
 }
 class NotificationSettingsPage extends StatefulWidget{final bool likes,comments,followers,messages,mentions;const NotificationSettingsPage({super.key,required this.likes,required this.comments,required this.followers,required this.messages,required this.mentions});@override State<NotificationSettingsPage> createState()=>_NotificationSettingsPageState();}
 class _NotificationSettingsPageState extends State<NotificationSettingsPage>{late bool likes,comments,followers,messages,mentions;@override void initState(){super.initState();likes=widget.likes;comments=widget.comments;followers=widget.followers;messages=widget.messages;mentions=widget.mentions;}Future<void> ch(String k,bool v)async{final p=await SharedPreferences.getInstance();await p.setBool(k,v);}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Notifications'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[const Text('Push notifications',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),SwitchListTile(title:const Text('Likes'),subtitle:const Text('When someone likes your post'),value:likes,onChanged:(v){setState(()=>likes=v);ch('notif_likes',v);}),SwitchListTile(title:const Text('Comments'),subtitle:const Text('When someone comments on your post'),value:comments,onChanged:(v){setState(()=>comments=v);ch('notif_comments',v);}),SwitchListTile(title:const Text('New followers'),subtitle:const Text('When someone follows you'),value:followers,onChanged:(v){setState(()=>followers=v);ch('notif_followers',v);}),SwitchListTile(title:const Text('Messages'),subtitle:const Text('New direct messages'),value:messages,onChanged:(v){setState(()=>messages=v);ch('notif_messages',v);}),SwitchListTile(title:const Text('Mentions'),subtitle:const Text('When someone mentions you'),value:mentions,onChanged:(v){setState(()=>mentions=v);ch('notif_mentions',v);})]));}
-}
 void _openThemeSettingsFromProfile(BuildContext context) {
   showModalBottomSheet(
     context: context,
@@ -6277,7 +6276,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                 Row(children:[const Icon(Icons.person_add_alt_1_outlined,size:20),const SizedBox(width:8),const Text('Tag people',style:TextStyle(fontWeight:FontWeight.w700))]),
                 const SizedBox(height:8),
                 TextField(controller:_tagController,decoration:const InputDecoration(hintText:'username (e.g. @choppa)',prefixIcon:Icon(Icons.alternate_email),isDense:true),onSubmitted:(v){final x=v.trim().replaceAll('@','');if(x.isNotEmpty&&!_taggedUsers.contains(x))setState((){_taggedUsers.add(x);_tagController.clear();});}),
-                if(_taggedUsers.isNotEmpty)...[const SizedBox(height:10),Wrap(spacing:6,runSpacing:6,children:_taggedUsers.map((u)=>InputChip(label:Text('@$u'),onDeleted:()=>setState(()=>_taggedUsers.remove(u))).toList()),const SizedBox(height:4),const Text('Tagged usernames are added to the post caption.',style:TextStyle(fontSize:11,color:Colors.grey))],
+                if(_taggedUsers.isNotEmpty)...[const SizedBox(height:10),Wrap(spacing:6,runSpacing:6,children:_taggedUsers.map((u)=>InputChip(label:Text('@$u'),onDeleted:()=>setState(()=>_taggedUsers.remove(u)))).toList()),const SizedBox(height:4),const Text('Tagged usernames are added to the post caption.',style:TextStyle(fontSize:11,color:Colors.grey))],
               ]),
             ),
 
