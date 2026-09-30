@@ -1,28 +1,18 @@
-import 'dart:convert';
+// Google Sign-In configuration
+// Web OAuth Client ID used for:
+// - Flutter Web clientId
+// - Android serverClientId
+//
+// Android OAuth credentials in Google Cloud must separately match:
+// Package: com.example.mobile
+// SHA-1: F6:7E:E4:DF:56:7D:3F:62:4F:A1:4E:FE:8B:7F:CA:B7:16:DD:CE:87
+const String googleWebClientId =
+    '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com';
 
-import 'messages_page.dart';
-import 'dart:typed_data';
-import 'package:image_picker/image_picker.dart';
-
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
-
-// Google Sign-In instance
-// Google OAuth client created in Google Cloud Console.
-// For this Android build, the OAuth client is:
-// 991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com
 final GoogleSignIn _googleSignIn = GoogleSignIn(
-  clientId: kIsWeb
-      ? '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com'
-      : null,
-  serverClientId: kIsWeb
-      ? null
-      : '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
-  scopes: ['email', 'profile', 'openid'],
+  clientId: kIsWeb ? googleWebClientId : null,
+  serverClientId: !kIsWeb ? googleWebClientId : null,
+  scopes: const ['email', 'profile', 'openid'],
 );
 
 // ======================================================
@@ -69,27 +59,31 @@ void _showAuthErrorDialog(BuildContext context, String title, String message) {
 
 Future<String?> getGoogleIdToken() async {
   try {
-    // Sign out first so the user gets the Google account picker.
+    // Sign out first so the account picker is shown.
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
 
     final account = await _googleSignIn.signIn();
+
     if (account == null) {
-      debugPrint('Google Sign-In: User dismissed account picker.');
+      debugPrint('Google Sign-In: User cancelled account picker.');
       return null;
     }
 
-    final auth = await account.authentication;
-    final idToken = auth.idToken;
+    final authentication = await account.authentication;
+    final idToken = authentication.idToken;
 
-    debugPrint('Google Sign-In: idToken is ${idToken != null ? "PRESENT" : "NULL"}');
-    debugPrint('Google Sign-In: accessToken is ${auth.accessToken != null ? "PRESENT" : "NULL"}');
+    debugPrint('Google Sign-In: account = ${account.email}');
+    debugPrint(
+      'Google Sign-In: idToken = '
+      '${idToken != null && idToken.isNotEmpty ? "PRESENT" : "NULL"}',
+    );
 
     if (idToken == null || idToken.isEmpty) {
       throw Exception(
-        'Google did not return an ID token.\nAccess Token present: ${auth.accessToken != null}\n'
-        'Check if your Google Cloud Web Client ID has http://localhost:8080 authorized.',
+        'Google Sign-In did not return an ID token. '
+        'Check the Google Cloud OAuth configuration.',
       );
     }
 
