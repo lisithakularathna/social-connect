@@ -21,6 +21,49 @@
   <meta name="description" content="A new Flutter project.">
   <meta name="google-signin-client_id" content="991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com">
 
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script>
+    // Called by Flutter Web when user clicks "Continue with Google"
+    window.socialConnectGoogleSignIn = function(onSuccess, onError) {
+      try {
+        google.accounts.id.initialize({
+          client_id: '991770544980-h1jr6bpuq3t064mjk80u6kkd3af14nee.apps.googleusercontent.com',
+          callback: function(response) {
+            if (response && response.credential) {
+              onSuccess(response.credential); // idToken
+            } else {
+              onError('No credential returned from Google.');
+            }
+          },
+          use_fedcm_for_prompt: false,
+          cancel_on_tap_outside: false,
+        });
+        google.accounts.id.prompt(function(notification) {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            // One Tap not shown — render and auto-click the button as fallback
+            var container = document.getElementById('g-signin-fallback');
+            if (!container) {
+              container = document.createElement('div');
+              container.id = 'g-signin-fallback';
+              container.style.position = 'fixed';
+              container.style.opacity = '0';
+              container.style.pointerEvents = 'none';
+              document.body.appendChild(container);
+            }
+            google.accounts.id.renderButton(container, {
+              theme: 'outline', size: 'large', type: 'standard',
+            });
+            var btn = container.querySelector('[role=button]');
+            if (btn) btn.click();
+          }
+        });
+      } catch (e) {
+        onError('Google Sign-In error: ' + e.toString());
+      }
+    };
+  </script>
+
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">

@@ -1,3 +1,20 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+// Web-only import for renderButton support
+import 'google_sign_in_web_stub.dart'
+    if (dart.library.html) 'google_sign_in_web_helper.dart';
+
+import 'messages_page.dart';
+
 // Google Sign-In configuration
 // Web OAuth Client ID used for:
 // - Flutter Web clientId
@@ -57,9 +74,9 @@ void _showAuthErrorDialog(BuildContext context, String title, String message) {
   );
 }
 
+// Mobile-only: get idToken via signIn() popup
 Future<String?> getGoogleIdToken() async {
   try {
-    // Sign out first so the account picker is shown.
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
@@ -94,9 +111,46 @@ Future<String?> getGoogleIdToken() async {
   }
 }
 
+// Shared: send idToken to our backend and navigate to HomePage
+Future<void> _exchangeTokenAndLogin(
+  BuildContext context,
+  String idToken,
+) async {
+  final navigator = Navigator.of(context);
+  final response = await http.post(
+    Uri.parse('$apiBaseUrl/auth/google'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode({'idToken': idToken}),
+  );
+
+  if (response.statusCode == 200 || response.statusCode == 201) {
+    final data = jsonDecode(response.body);
+    final accessToken = data['accessToken'];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('accessToken', accessToken);
+    if (!context.mounted) return;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const HomePage()),
+      (route) => false,
+    );
+  } else {
+    String errorMessage =
+        'Status Code: ${response.statusCode}\nBody: ${response.body}';
+    try {
+      final err = jsonDecode(response.body);
+      if (err['message'] != null) {
+        errorMessage =
+            'Error: ${err['message']}\nStatus: ${response.statusCode}';
+      }
+    } catch (_) {}
+    if (!context.mounted) return;
+    _showAuthErrorDialog(context, 'Backend Error', errorMessage);
+  }
+}
+
+// Mobile-only sign-in handler (uses signIn() popup)
 Future<void> handleGoogleSignIn(BuildContext context) async {
   final messenger = ScaffoldMessenger.of(context);
-  final navigator = Navigator.of(context);
 
   try {
     final idToken = await getGoogleIdToken();
@@ -111,36 +165,33 @@ Future<void> handleGoogleSignIn(BuildContext context) async {
       return;
     }
 
-    final response = await http.post(
-      Uri.parse('$apiBaseUrl/auth/google'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'idToken': idToken}),
-    );
-
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final data = jsonDecode(response.body);
-      final accessToken = data['accessToken'];
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('accessToken', accessToken);
-
-      navigator.pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const HomePage()),
-        (route) => false,
-      );
-    } else {
-      String errorMessage = 'Status Code: ${response.statusCode}\nBody: ${response.body}';
-      try {
-        final err = jsonDecode(response.body);
-        if (err['message'] != null) {
-          errorMessage = 'Error: ${err['message']}\nStatus: ${response.statusCode}';
-        }
-      } catch (_) {}
-      _showAuthErrorDialog(context, 'Backend Error', errorMessage);
-    }
+    if (!context.mounted) return;
+    await _exchangeTokenAndLogin(context, idToken);
   } catch (e) {
+    if (!context.mounted) return;
     _showAuthErrorDialog(context, 'Google Sign-In Error', '$e');
   }
 }
+
+// Web-only: called after renderButton successfully signs the user in
+Future<void> handleWebGoogleSignIn(
+  BuildContext context,
+  GoogleSignInAccount account,
+) async {
+  try {
+    final authentication = await account.authentication;
+    final idToken = authentication.idToken;
+    if (idToken == null || idToken.isEmpty) {
+      throw Exception('No idToken returned from Google. Check OAuth config.');
+    }
+    if (!context.mounted) return;
+    await _exchangeTokenAndLogin(context, idToken);
+  } catch (e) {
+    if (!context.mounted) return;
+    _showAuthErrorDialog(context, 'Google Sign-In Error', '$e');
+  }
+}
+
 
 final ValueNotifier<ThemeMode> themeNotifier =
     ValueNotifier(ThemeMode.light);
@@ -164,6 +215,7 @@ Future<void> setThemePreference(ThemeMode mode) async {
           ? 'system'
           : 'light');
 }
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -757,39 +809,53 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 20),
 
                   // ── Google Sign-In ──
-                  SizedBox(
-                    height: 52,
-                    child: OutlinedButton(
-                      onPressed: isLoading ? null : () => handleGoogleSignIn(context),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: isDark ? Colors.grey[700]! : Colors.grey[300]!),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                  if (kIsWeb)
+                    GoogleWebSignInButton(
+                      onSuccess: (idToken) =>
+                          _exchangeTokenAndLogin(context, idToken),
+                      onError: (error) =>
+                          _showAuthErrorDialog(context, 'Google Sign-In', error),
+                    )
+                  else
+                    SizedBox(
+                      height: 52,
+                      child: OutlinedButton(
+                        onPressed: isLoading
+                            ? null
+                            : () => handleGoogleSignIn(context),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                              color: isDark
+                                  ? Colors.grey[700]!
+                                  : Colors.grey[300]!),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          foregroundColor:
+                              isDark ? Colors.white : Colors.black,
                         ),
-                        foregroundColor: isDark ? Colors.white : Colors.black,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.network(
-                            'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-                            height: 22,
-                            width: 22,
-                            errorBuilder: (_, _, _) =>
-                                const Icon(Icons.g_mobiledata, size: 26),
-                          ),
-                          const SizedBox(width: 10),
-                          const Text(
-                            'Continue with Google',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.network(
+                              'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                              height: 22,
+                              width: 22,
+                              errorBuilder: (_, _, _) =>
+                                  const Icon(Icons.g_mobiledata, size: 26),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            const Text(
+                              'Continue with Google',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
                   const SizedBox(height: 32),
 
@@ -2514,39 +2580,53 @@ class _RegisterPageState extends State<RegisterPage> {
                   const SizedBox(height: 20),
 
                   // ── Google Sign-In ──
-                  SizedBox(
-                    height: 50,
-                    child: OutlinedButton(
-                      onPressed: isLoading ? null : () => handleGoogleSignIn(context),
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: isDark ? Colors.grey[700]! : Colors.grey[300]!),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                  if (kIsWeb)
+                    GoogleWebSignInButton(
+                      onSuccess: (idToken) =>
+                          _exchangeTokenAndLogin(context, idToken),
+                      onError: (error) =>
+                          _showAuthErrorDialog(context, 'Google Sign-In', error),
+                    )
+                  else
+                    SizedBox(
+                      height: 50,
+                      child: OutlinedButton(
+                        onPressed: isLoading
+                            ? null
+                            : () => handleGoogleSignIn(context),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                              color: isDark
+                                  ? Colors.grey[700]!
+                                  : Colors.grey[300]!),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          foregroundColor:
+                              isDark ? Colors.white : Colors.black,
                         ),
-                        foregroundColor: isDark ? Colors.white : Colors.black,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.network(
-                            'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
-                            height: 20,
-                            width: 20,
-                            errorBuilder: (_, _, _) =>
-                                const Icon(Icons.g_mobiledata, size: 24),
-                          ),
-                          const SizedBox(width: 10),
-                          const Text(
-                            'Continue with Google',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.network(
+                              'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg',
+                              height: 20,
+                              width: 20,
+                              errorBuilder: (_, _, _) =>
+                                  const Icon(Icons.g_mobiledata, size: 24),
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            const Text(
+                              'Continue with Google',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
 
                   const SizedBox(height: 28),
 
@@ -5669,7 +5749,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                   : Theme.of(context)
                                       .colorScheme
                                       .primary
-                                      .withValues(alpha: 0.06),
+                                      .withOpacity(0.06),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 14,
@@ -5680,7 +5760,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                   CircleAvatar(
                                     radius: 22,
                                     backgroundColor: _getNotificationColor(type)
-                                        .withValues(alpha: 0.15),
+                                        .withOpacity(0.15),
                                     child: Icon(
                                       _getNotificationIcon(type),
                                       color: _getNotificationColor(type),
@@ -5835,7 +5915,7 @@ class _UserListPageState extends State<UserListPage> {
                     color: Theme.of(context)
                         .colorScheme
                         .primary
-                        .withValues(alpha: 0.12),
+                        .withOpacity(0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -6252,7 +6332,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                     right: 10,
                     child: CircleAvatar(
                       radius: 18,
-                      backgroundColor: Colors.black.withValues(alpha: 0.6),
+                      backgroundColor: Colors.black.withOpacity(0.6),
                       child: IconButton(
                         padding: EdgeInsets.zero,
                         icon: const Icon(
@@ -6269,7 +6349,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                     right: 10,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black.withValues(alpha: 0.65),
+                        backgroundColor: Colors.black.withOpacity(0.65),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
@@ -6291,10 +6371,10 @@ class _CreatePostPageState extends State<CreatePostPage> {
                 padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.3),
+                      .withOpacity(0.3),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                    color: theme.colorScheme.outline.withOpacity(0.3),
                     width: 1.5,
                   ),
                 ),
@@ -6303,7 +6383,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                     CircleAvatar(
                       radius: 28,
                       backgroundColor: theme.colorScheme.primary
-                          .withValues(alpha: 0.12),
+                          .withOpacity(0.12),
                       child: Icon(
                         Icons.add_photo_alternate_rounded,
                         size: 30,
@@ -6401,7 +6481,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
             Container(
               margin: const EdgeInsets.only(top: 16),
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),border: Border.all(color: theme.colorScheme.outline.withValues(alpha: .25))),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),border: Border.all(color: theme.colorScheme.outline.withOpacity(.25))),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start,children:[
                 Row(children:[const Icon(Icons.person_add_alt_1_outlined,size:20),const SizedBox(width:8),const Text('Tag people',style:TextStyle(fontWeight:FontWeight.w700))]),
                 const SizedBox(height:8),
