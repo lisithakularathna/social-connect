@@ -27,7 +27,7 @@ function Home() {
       setError(null);
       const response = await api.get("/posts");
       console.log("Posts loaded:", response.data);
-      setPosts(response.data);
+      setPosts(response.data.posts || response.data); // Fallback in case it's actually an array
     } catch (error: any) {
       console.error("Error loading posts:", error);
       setError(error.response?.data?.message || error.message || "Failed to load posts");
