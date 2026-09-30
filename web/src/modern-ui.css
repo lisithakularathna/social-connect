@@ -118,5 +118,3 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .no-chat p:last-child { margin: 0; color: var(--text-secondary); font-size: 13px; }
 @media (max-width: 900px) { .messages-page { margin-left: auto; } }
 @media (max-width: 650px) { .messages-page { width: 100%; padding: 0 0 78px; } .messages-layout { height: calc(100vh - 64px); min-height: 0; border: 0; border-radius: 0; } .conversation-sidebar { grid-column: 1 / -1; border-right: 0; } .messages-layout:has(.chat-header) .conversation-sidebar { display: none; } .chat-section { grid-column: 1 / -1; } .chat-back { display: block; } .chat-messages { padding: 20px 16px; } .message-input { padding: 12px; } .send-message-button { padding: 0 14px; } }
-{
-
