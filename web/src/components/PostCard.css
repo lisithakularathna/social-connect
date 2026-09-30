@@ -1,65 +1,157 @@
+/* Modern Post Card Styles */
 .post-card {
-  border: 1px solid #dbdbdb;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  background: white;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  margin-bottom: 24px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px var(--shadow-color);
+  transition: transform 0.2s, box-shadow 0.2s;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--text-primary);
+}
+
+.post-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
 .post-header {
   display: flex;
   align-items: center;
-  padding: 14px;
+  padding: 16px;
 }
 
 .avatar {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: #eee;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-right: 12px;
   font-weight: bold;
-}
-
-.author-name {
-  font-weight: 600;
+  color: white;
+  font-size: 16px;
 }
 
 .post-image {
   width: 100%;
   max-height: 600px;
   object-fit: cover;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.text-post-content {
+  min-height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+  font-weight: 700;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  font-size: 24px;
 }
 
 .post-content {
-  padding: 14px;
+  padding: 16px;
 }
 
-.post-actions {
-  padding: 0 14px 14px;
+.like-btn {
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  margin-right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 0.1s;
 }
 
+.like-btn:active {
+  transform: scale(0.9);
+}
 
-.post-card { position: relative; }
-.post-menu { position: absolute; right: 10px; top: 8px; z-index: 10; }
-.post-menu-button { border: 0; background: transparent; font-size: 24px; cursor: pointer; padding: 2px 8px; }
-.post-menu-dropdown { position: absolute; right: 0; top: 34px; min-width: 120px; background: white; border: 1px solid #ddd; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); overflow: hidden; }
-.post-menu-dropdown button { display:block; width:100%; border:0; background:white; padding:10px 14px; text-align:left; cursor:pointer; }
-.post-menu-dropdown .delete-action { color:#e53935; }
-.text-post-content { min-height: 300px; display:flex; align-items:center; justify-content:center; padding:30px; text-align:center; font-weight:700; white-space:pre-wrap; }
-.edit-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px; }
-.edit-modal { width:min(520px,100%); max-height:90vh; overflow:auto; background:white; border-radius:16px; padding:20px; box-shadow:0 20px 60px rgba(0,0,0,.25); }
-.edit-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-.edit-header h2 { margin:0; }
-.edit-header button { border:0; background:transparent; font-size:28px; cursor:pointer; }
-.edit-modal input, .edit-modal textarea { width:100%; box-sizing:border-box; margin-bottom:12px; padding:11px 12px; border:1px solid #ddd; border-radius:10px; font:inherit; }
+.like-btn.liked {
+  color: #ed4956;
+}
+
+.comments {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+
+.comment {
+  margin-bottom: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.comment strong {
+  font-weight: 600;
+  margin-right: 6px;
+  color: var(--text-primary);
+}
+
+.comment-input {
+  display: flex;
+  align-items: center;
+  margin-top: 12px;
+  gap: 12px;
+}
+
+.comment-input input {
+  flex: 1;
+  border: none;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: 20px;
+  font-size: 14px;
+  outline: none;
+  transition: background 0.2s;
+}
+
+.comment-input input:focus {
+  background: var(--input-focus);
+}
+
+.comment-input button {
+  background: transparent;
+  color: #0095f6;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.post-menu { position: absolute; right: 12px; top: 16px; z-index: 10; }
+.post-menu-button { border: 0; background: transparent; font-size: 20px; cursor: pointer; padding: 4px; color: var(--text-secondary); }
+.post-menu-dropdown { position: absolute; right: 0; top: 30px; min-width: 120px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 8px 24px var(--shadow-color); overflow: hidden; padding: 4px 0; }
+.post-menu-dropdown button { display:block; width:100%; border:0; background:var(--card-bg); color: var(--text-primary); padding:10px 16px; text-align:left; cursor:pointer; font-size: 14px; font-weight: 500; }
+.post-menu-dropdown button:hover { background: var(--input-bg); }
+.post-menu-dropdown .delete-action { color: #ed4956; }
+
+.edit-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.8); backdrop-filter: blur(4px); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px; }
+.edit-modal { width:100%; max-width: 500px; max-height:90vh; overflow-y:auto; background:var(--card-bg); color: var(--text-primary); border-radius:20px; padding:24px; box-shadow:0 24px 48px var(--shadow-color); }
+.edit-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+.edit-header h2 { margin:0; font-size: 20px; font-weight: 700; }
+.edit-header button { border:0; background:transparent; font-size:24px; cursor:pointer; color: var(--text-secondary); }
+.edit-modal input, .edit-modal textarea { width:100%; box-sizing:border-box; margin-bottom:16px; padding:12px 16px; border:1px solid var(--border-color); color: var(--text-primary); border-radius:12px; font-size: 15px; outline: none; background: var(--input-bg); }
+.edit-modal input:focus, .edit-modal textarea:focus { border-color: var(--text-secondary); background: var(--card-bg); }
 .edit-modal textarea { min-height:120px; resize:vertical; }
-.edit-colors { display:flex; gap:10px; flex-wrap:wrap; margin:8px 0 16px; }
-.edit-color { width:34px; height:34px; border-radius:50%; border:2px solid #ddd; cursor:pointer; }
-.edit-color.selected { outline:2px solid #111; outline-offset:2px; }
-.edit-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
-.edit-actions button { border:0; border-radius:9px; padding:10px 16px; cursor:pointer; }
-.save-edit { background:#0095f6; color:white; }
-.cancel-edit { background:#eee; }
+.edit-colors { display:flex; gap:12px; flex-wrap:wrap; margin:12px 0 20px; }
+.edit-color { width:36px; height:36px; border-radius:50%; border:2px solid var(--card-bg); box-shadow: 0 2px 8px var(--shadow-color); cursor:pointer; transition: transform 0.2s; }
+.edit-color:hover { transform: scale(1.1); }
+.edit-color.selected { outline:3px solid var(--text-primary); outline-offset: 2px; }
+.edit-actions { display:flex; justify-content:flex-end; gap:12px; margin-top:24px; }
+.edit-actions button { border:0; border-radius:12px; padding:12px 20px; font-weight: 600; cursor:pointer; font-size: 15px; }
+.save-edit { background:var(--btn-bg); color:var(--btn-text); }
+.cancel-edit { background:var(--input-bg); color: var(--text-primary); }
