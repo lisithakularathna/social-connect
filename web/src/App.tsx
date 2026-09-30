@@ -15,6 +15,7 @@ import Search from "./pages/Search";
 import Activity from "./pages/Activity";
 import Messages from "./pages/Messages";
 import Following from "./pages/Following";
+import Settings from "./pages/Settings";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -56,6 +57,15 @@ function App() {
           element={
             <ProtectedRoute>
               <Profile />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <Settings />
             </ProtectedRoute>
           }
         />
