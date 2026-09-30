@@ -72,7 +72,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .edit-header button { border: 0; color: var(--text-secondary); background: transparent; font-size: 26px; cursor: pointer; }
 .edit-modal input, .edit-modal textarea { width: 100%; margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary); background: var(--input-bg); outline: none; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-
 /* Direct messages */
 .messages-page { width: min(100% - 32px, 1080px); margin-left: max(calc(50vw - 420px), 280px); padding-top: 30px; }
 .messages-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: min(690px, calc(100vh - 88px)); min-height: 520px; overflow: hidden; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 24px; box-shadow: 0 18px 55px var(--shadow-color); }
@@ -119,4 +118,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .no-chat p:last-child { margin: 0; color: var(--text-secondary); font-size: 13px; }
 @media (max-width: 900px) { .messages-page { margin-left: auto; } }
 @media (max-width: 650px) { .messages-page { width: 100%; padding: 0 0 78px; } .messages-layout { height: calc(100vh - 64px); min-height: 0; border: 0; border-radius: 0; } .conversation-sidebar { grid-column: 1 / -1; border-right: 0; } .messages-layout:has(.chat-header) .conversation-sidebar { display: none; } .chat-section { grid-column: 1 / -1; } .chat-back { display: block; } .chat-messages { padding: 20px 16px; } .message-input { padding: 12px; } .send-message-button { padding: 0 14px; } }
-"}},{
+{
+
