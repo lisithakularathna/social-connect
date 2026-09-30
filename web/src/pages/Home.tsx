@@ -79,6 +79,7 @@ function Home() {
               <PostCard
                 key={post.id}
                 post={post}
+                onDelete={loadPosts}
               />
             ))}
           </div>

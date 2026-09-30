@@ -27,9 +27,10 @@ interface Comment {
 
 interface Props {
   post: Post;
+  onDelete?: () => void;
 }
 
-function PostCard({ post }: Props) {
+function PostCard({ post, onDelete }: Props) {
   const navigate = useNavigate();
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
@@ -89,7 +90,10 @@ function PostCard({ post }: Props) {
     if (!window.confirm("Are you sure you want to delete this post?")) return;
     try {
       await api.delete(`/posts/${post.id}`);
-      window.location.reload();
+      // Call the onDelete callback to refresh the list
+      if (onDelete) {
+        onDelete();
+      }
     } catch (error: any) {
       alert(error.response?.data?.message || "Failed to delete post");
     }
@@ -106,8 +110,10 @@ function PostCard({ post }: Props) {
       });
       setShowEdit(false);
       setShowMenu(false);
-      window.dispatchEvent(new Event("posts-changed"));
-      window.location.reload();
+      // Call the onDelete callback to refresh the list (reuses same callback)
+      if (onDelete) {
+        onDelete();
+      }
     } catch (error: any) {
       alert(error.response?.data?.message || "Failed to update post");
     } finally {

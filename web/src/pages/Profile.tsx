@@ -60,6 +60,10 @@ function Profile() {
     }
   };
 
+  const handlePostDeleted = () => {
+    loadPosts(); // Reload posts after delete
+  };
+
   const updateProfile = async () => {
     try {
       const formData = new FormData();
