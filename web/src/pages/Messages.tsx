@@ -131,15 +131,19 @@ function Messages() {
           {/* Sidebar: Following list */}
           <aside className="conversation-sidebar">
             <div className="messages-title">
-              <h1>Messages</h1>
+              <div>
+                <p className="eyebrow">PRIVATE SPACE</p>
+                <h1>Messages</h1>
+              </div>
+              <button className="new-message-button" aria-label="Start a new message">+</button>
             </div>
 
             {loading ? (
               <div className="conversation-loading">Loading...</div>
             ) : followingUsers.length === 0 ? (
               <div className="conversation-empty">
-                <span>💬</span>
-                <p>Follow people to start messaging!</p>
+                <span className="empty-message-icon" aria-hidden="true">✦</span>
+                <p>Follow people to start messaging.</p>
               </div>
             ) : (
               followingUsers.map((u) => (
@@ -170,8 +174,9 @@ function Messages() {
           <section className="chat-section">
             {!userId || !selectedUser ? (
               <div className="no-chat">
-                <div className="no-chat-icon">💬</div>
-                <h2>Your Messages</h2>
+                <div className="no-chat-icon" aria-hidden="true">✦</div>
+                <p className="eyebrow">DIRECT MESSAGES</p>
+                <h2>Your messages, your space.</h2>
                 <p>Select someone from the list to start chatting.</p>
               </div>
             ) : (
@@ -199,9 +204,7 @@ function Messages() {
                     >
                       {selectedUser.username || selectedUser.name}
                     </strong>
-                    {selectedUser.name && (
-                      <small>{selectedUser.name}</small>
-                    )}
+                    <small><span className="online-dot" /> Active now</small>
                   </div>
                 </header>
 
@@ -243,10 +246,11 @@ function Messages() {
                         sendMessage();
                       }
                     }}
-                    placeholder="Message..."
+                    placeholder="Write a message..."
+                    aria-label="Write a message"
                   />
-                  <button onClick={sendMessage} disabled={!message.trim() || sending}>
-                    {sending ? "..." : "Send"}
+                  <button className="send-message-button" onClick={sendMessage} disabled={!message.trim() || sending}>
+                    {sending ? "Sending" : "Send"}
                   </button>
                 </div>
               </>
