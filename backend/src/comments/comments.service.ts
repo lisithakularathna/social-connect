@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -67,15 +68,59 @@ export class CommentsService {
     return {
       postId,
       commentCount: comments.length,
-      comments: comments.map((comment) => ({
-        id: comment.id,
-        content: comment.content,
-        userId: comment.userId,
-        username: comment.user.username,
-        name: comment.user.name,
-        profileImageUrl: comment.user.profileImageUrl,
-        createdAt: comment.createdAt,
-      })),
+      comments: comments.map((comment) => {
+        const isEdited =
+          comment.updatedAt &&
+          comment.createdAt &&
+          new Date(comment.updatedAt).getTime() -
+            new Date(comment.createdAt).getTime() >
+            1500;
+
+        return {
+          id: comment.id,
+          content: comment.content,
+          userId: comment.userId,
+          username: comment.user?.username,
+          name: comment.user?.name,
+          profileImageUrl: comment.user?.profileImageUrl,
+          createdAt: comment.createdAt,
+          updatedAt: comment.updatedAt,
+          isEdited: Boolean(isEdited),
+        };
+      }),
+    };
+  }
+
+  async updateComment(commentId: number, content: string, userId: number) {
+    const cleanContent = content?.trim();
+    if (!cleanContent) {
+      throw new BadRequestException('Comment content cannot be empty');
+    }
+
+    const comments = await db.orm.public.Comment
+      .where({ id: commentId })
+      .all();
+
+    if (comments.length === 0) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    const comment = comments[0];
+
+    if (comment.userId !== userId) {
+      throw new ForbiddenException('You can only edit your own comments');
+    }
+
+    const updated = await db.orm.public.Comment
+      .where({ id: commentId })
+      .update({
+        content: cleanContent,
+        updatedAt: new Date().toISOString(),
+      });
+
+    return {
+      message: 'Comment updated successfully',
+      comment: updated,
     };
   }
 
@@ -90,14 +135,9 @@ export class CommentsService {
 
     const comment = comments[0];
 
+    // Only allow comment author to delete their own comment
     if (comment.userId !== userId) {
-      const posts = await db.orm.public.Post
-        .where({ id: comment.postId })
-        .all();
-      const post = posts[0];
-      if (!post || post.authorId !== userId) {
-        throw new ForbiddenException('You can only delete your own comments');
-      }
+      throw new ForbiddenException('You can only delete your own comments');
     }
 
     await db.orm.public.Comment
