@@ -121,7 +121,7 @@ class _MessagesPageState extends State<MessagesPage> {
                       ])
                     : ListView.separated(
                         itemCount: conversations.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        separatorBuilder: (_, _) => const Divider(height: 1),
                         itemBuilder: (context, index) {
                           final item = conversations[index];
                           final user = Map<String, dynamic>.from(item['user'] as Map);
@@ -429,7 +429,7 @@ class _SharedPostPreview extends StatelessWidget {
               height: 170,
               width: double.infinity,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
+              errorBuilder: (_, _, _) => Container(
                 height: 100,
                 color: Colors.grey.shade300,
                 child: const Center(child: Icon(Icons.broken_image_outlined)),
