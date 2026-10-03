@@ -3,6 +3,11 @@ import { NavLink, useNavigate } from "react-router-dom";
 import api from "../api/api";
 
 interface Account {
+  id?: number;
+  email?: string;
+  username?: string;
+  name?: string;
+  bio?: string;
   profileImageUrl?: string;
 }
 
@@ -16,9 +21,7 @@ function Navbar() {
     try {
       const { data } = await api.get("/users/me");
       setAccount(data);
-    } catch (error) {
-      console.error("Unable to load account details", error);
-    }
+    } catch (error) { console.error("Unable to load account details", error); }
   };
 
   useEffect(() => {
@@ -28,22 +31,16 @@ function Navbar() {
 
   useEffect(() => { void loadAccount(); }, []);
 
-  const logout = () => {
-    localStorage.removeItem("accessToken");
-    navigate("/login");
-  };
+  const logout = () => { localStorage.removeItem("accessToken"); navigate("/login"); };
 
-  const navItemClass = ({ isActive }: { isActive: boolean }) =>
-    `sidebar-link ${isActive ? "active" : ""}`;
+  const navItemClass = ({ isActive }: { isActive: boolean }) => `sidebar-link ${isActive ? "active" : ""}`;
 
   return (
     <aside className="left-sidebar">
       <div className="sidebar-logo" onClick={() => navigate("/")}>Social Connect</div>
-
       <nav className="sidebar-nav">
         <NavLink to="/" className={navItemClass}><span className="sidebar-icon">⌂</span> Home</NavLink>
         <NavLink to="/search" className={navItemClass}><span className="sidebar-icon">⌕</span> Search</NavLink>
-        <NavLink to="#" onClick={(e) => { e.preventDefault(); alert("Reels coming soon!"); }} className="sidebar-link"><span className="sidebar-icon">🎬</span> Reels</NavLink>
         <NavLink to="/messages" className={navItemClass}><span className="sidebar-icon">✉</span> Messages</NavLink>
         <NavLink to="/activity" className={navItemClass}><span className="sidebar-icon">♡</span> Notifications</NavLink>
         <NavLink to="/create" className={navItemClass}><span className="sidebar-icon">＋</span> Create</NavLink>
@@ -51,7 +48,7 @@ function Navbar() {
           {account?.profileImageUrl
             ? <img className="sidebar-profile-icon" src={account.profileImageUrl} alt="Your profile" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />
             : <span className="sidebar-icon">◉</span>}
-          Profile
+          {" "}Profile
         </NavLink>
       </nav>
 
@@ -59,7 +56,7 @@ function Navbar() {
         <div className="more-menu-container">
           {showMore && (
             <div className="more-dropdown">
-              <button onClick={() => { setShowMore(false); navigate("/settings"); }}>⚙️ Settings</button>
+              <button onClick={() => { navigate("/settings"); setShowMore(false); }}>⚙️ Settings</button>
               <button onClick={() => { setIsDarkMode(!isDarkMode); setShowMore(false); }}>
                 {isDarkMode ? "☀️ Light Mode" : "🌙 Dark Mode"}
               </button>
