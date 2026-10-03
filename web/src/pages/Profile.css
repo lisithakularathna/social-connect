@@ -372,6 +372,21 @@
   }
 }
 
+/* Refined profile surface */
+.profile-page { padding-top: 44px; }
+.profile-header { padding: 28px 30px 30px; margin-bottom: 26px; border: 1px solid var(--border-color); border-radius: 22px; background: var(--card-bg); box-shadow: 0 12px 35px var(--shadow-color); }
+.profile-avatar { width: 104px; height: 104px; border: 4px solid var(--card-bg); outline: 2px solid color-mix(in srgb, var(--accent) 45%, var(--border-color)); }
+.profile-username { font-family: 'Playfair Display', Georgia, serif; font-size: 27px; letter-spacing: -.6px; }
+.profile-stats { gap: 12px; }
+.profile-stats .stat { padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--input-bg); }
+.profile-stats .stat strong { display: block; margin: 0 0 2px; font-size: 16px; }
+.profile-stats .stat { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.profile-tabs-nav { justify-content: flex-start; gap: 8px; padding: 0 10px; }
+.profile-tab-btn { border-radius: 10px 10px 0 0; }
+.profile-tab-btn.active { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.posts-grid { gap: 18px; }
+.grid-post { border-radius: 18px; }
+
 @media (max-width: 600px) {
   .profile-header {
     flex-direction: column;
