@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
 import PostCard from "../components/PostCard";
+import StoriesBar from "../components/StoriesBar";
 import api from "../api/api";
 
 interface Post {
@@ -11,16 +12,40 @@ interface Post {
   imageUrl?: string;
   authorId: number;
   author?: {
+    id?: number;
     username?: string;
     name?: string;
     profileImageUrl?: string;
   };
+  createdAt?: string;
+}
+
+interface CurrentUser {
+  id: number;
+  username?: string;
+  profileImageUrl?: string;
 }
 
 function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
+  const [account, setAccount] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const loadAccount = async () => {
+    try {
+      const res = await api.get("/users/me");
+      if (res.data) {
+        setAccount({
+          id: res.data.id,
+          username: res.data.username || res.data.name,
+          profileImageUrl: res.data.profileImageUrl,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load user info:", err);
+    }
+  };
 
   const loadPosts = async () => {
     try {
@@ -37,6 +62,7 @@ function Home() {
   };
 
   useEffect(() => {
+    loadAccount();
     loadPosts();
   }, []);
 
@@ -45,6 +71,9 @@ function Home() {
       <Navbar />
 
       <main className="feed-page">
+        {/* Stories Section at the top */}
+        <StoriesBar posts={posts} currentUser={account} />
+
         {loading ? (
           <div className="loading">
             <p>Loading posts...</p>
