@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1215,14 +1214,16 @@ class _HomePageState extends State<HomePage> {
 
   Widget buildFeed() {
     if (isLoading) return const Center(child: CircularProgressIndicator());
-    if (errorMessage != null) return ListView(children: [
-      SizedBox(height: MediaQuery.of(context).size.height * .3),
-      Center(child: Column(children: [
-        const Icon(Icons.wifi_off_rounded, size: 60, color: Colors.grey),
-        const SizedBox(height: 12), Text(errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
-        const SizedBox(height: 16), ElevatedButton(onPressed: loadPosts, child: const Text('Retry')),
-      ])),
-    ]);
+    if (errorMessage != null) {
+      return ListView(children: [
+        SizedBox(height: MediaQuery.of(context).size.height * .3),
+        Center(child: Column(children: [
+          const Icon(Icons.wifi_off_rounded, size: 60, color: Colors.grey),
+          const SizedBox(height: 12), Text(errorMessage!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+          const SizedBox(height: 16), ElevatedButton(onPressed: loadPosts, child: const Text('Retry')),
+        ])),
+      ]);
+    }
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
@@ -1292,7 +1293,7 @@ Color _postColor(dynamic hex, bool isDark) {
   if (hex is String) {
     final value = hex.replaceAll('#', '').trim();
     try {
-      if (value.length == 6) return Color(int.parse('FF' + value, radix: 16));
+      if (value.length == 6) return Color(int.parse('FF$value', radix: 16));
       if (value.length == 8) return Color(int.parse(value, radix: 16));
     } catch (_) {}
   }
@@ -1445,14 +1446,14 @@ class _PostCardState extends State<PostCard>
       final token = prefs.getString('accessToken');
       if (token == null || token.isEmpty) return;
       final response = await http.post(
-        Uri.parse(apiBaseUrl + '/posts/repost/' + widget.post['id'].toString()),
-        headers: {'Authorization': 'Bearer ' + token},
+        Uri.parse('$apiBaseUrl/posts/repost/${widget.post["id"]}'),
+        headers: {'Authorization': 'Bearer $token'},
       );
       if (!mounted) return;
       if (response.statusCode == 200 || response.statusCode == 201) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Post reposted to your feed')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Repost failed (' + response.statusCode.toString() + ')')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Repost failed (${response.statusCode})')));
       }
     } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Repost error: $e'))); }
   }
@@ -2749,13 +2750,20 @@ class _PrivacySettingsPageState extends State<PrivacySettingsPage> {
               title: Text('Message Privacy', style: TextStyle(fontWeight: FontWeight.w800)),
               subtitle: Text('Choose who can send you messages'),
             ),
-            for (final option in ['Everyone', 'Followers', 'No one'])
-              RadioListTile<String>(
-                value: option,
-                groupValue: messagePrivacy,
-                title: Text(option),
-                onChanged: (value) => Navigator.pop(ctx, value),
+            RadioGroup<String>(
+              groupValue: messagePrivacy,
+              onChanged: (value) => Navigator.pop(ctx, value),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final option in ['Everyone', 'Followers', 'No one'])
+                    RadioListTile<String>(
+                      value: option,
+                      title: Text(option),
+                    ),
+                ],
               ),
+            ),
             const SizedBox(height: 12),
           ],
         ),
@@ -2875,7 +2883,7 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
       searchController.clear();
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('@' + item['username'].toString() + ' blocked')),
+      SnackBar(content: Text('@${item['username']} blocked')),
     );
   }
 
@@ -2885,7 +2893,7 @@ class _BlockedUsersPageState extends State<BlockedUsersPage> {
     if (mounted) {
       setState(() => blockedUsers = updated);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('@' + user['username'].toString() + ' unblocked')),
+        SnackBar(content: Text('@${user['username']} unblocked')),
       );
     }
   }
@@ -2952,8 +2960,10 @@ class _SettingsPageState extends State<SettingsPage>{
  bool likes=true,comments=true,followers=true,messages=true,mentions=true;
  @override void initState(){super.initState();_load();}
  Future<void> _load()async{final p=await SharedPreferences.getInstance();if(!mounted)return;setState((){likes=p.getBool('notif_likes')??true;comments=p.getBool('notif_comments')??true;followers=p.getBool('notif_followers')??true;messages=p.getBool('notif_messages')??true;mentions=p.getBool('notif_mentions')??true;});}
- void _theme(){showModalBottomSheet(context:context,showDragHandle:true,builder:(s)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(c,m,_)=>SafeArea(child:Column(mainAxisSize:MainAxisSize.min,children:[const ListTile(title:Text('Appearance',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text('Choose Light, Dark or System')),RadioListTile(value:ThemeMode.light,groupValue:m,title:const Text('Light'),secondary:const Icon(Icons.light_mode_outlined),onChanged:(v)async{await setThemePreference(v!);if(s.mounted)Navigator.pop(s);}),RadioListTile(value:ThemeMode.dark,groupValue:m,title:const Text('Dark'),secondary:const Icon(Icons.dark_mode_outlined),onChanged:(v)async{await setThemePreference(v!);if(s.mounted)Navigator.pop(s);}),RadioListTile(value:ThemeMode.system,groupValue:m,title:const Text('System'),secondary:const Icon(Icons.brightness_auto_outlined),onChanged:(v)async{await setThemePreference(v!);if(s.mounted)Navigator.pop(s);})]))));}
- Widget tile(IconData i,String t,String st,VoidCallback f)=>ListTile(contentPadding:const EdgeInsets.symmetric(horizontal:4),leading:Icon(i),title:Text(t,style:const TextStyle(fontWeight:FontWeight.w600)),subtitle:Text(st),trailing:const Icon(Icons.chevron_right_rounded),onTap:f);
+ void _theme(){showModalBottomSheet(context:context,showDragHandle:true,builder:(s)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(c,m,_)=>SafeArea(child:RadioGroup<ThemeMode>(groupValue:m,onChanged:(v)async{if(v==null)return;await setThemePreference(v);if(s.mounted)Navigator.pop(s);},child:Column(mainAxisSize:MainAxisSize.min,children:[const ListTile(title:Text('Appearance',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text('Choose Light, Dark or System')),const RadioListTile<ThemeMode>(value:ThemeMode.light,title:Text('Light'),secondary:Icon(Icons.light_mode_outlined)),const RadioListTile<ThemeMode>(value:ThemeMode.dark,title:Text('Dark'),secondary:Icon(Icons.dark_mode_outlined)),const RadioListTile<ThemeMode>(value:ThemeMode.system,title:Text('System'),secondary:Icon(Icons.brightness_auto_outlined))])))));}
+ 
+
+Widget tile(IconData i,String t,String st,VoidCallback f)=>ListTile(contentPadding:const EdgeInsets.symmetric(horizontal:4),leading:Icon(i),title:Text(t,style:const TextStyle(fontWeight:FontWeight.w600)),subtitle:Text(st),trailing:const Icon(Icons.chevron_right_rounded),onTap:f);
  void _notifications()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>NotificationSettingsPage(likes:likes,comments:comments,followers:followers,messages:messages,mentions:mentions))).then((_)=>_load());
  @override Widget build(BuildContext context){final m=themeNotifier.value;final n=m==ThemeMode.dark?'Dark':m==ThemeMode.system?'System':'Light';return Scaffold(appBar:AppBar(title:const Text('Settings'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[const Text('Preferences',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),const SizedBox(height:6),tile(Icons.brightness_6_outlined,'Theme',n,_theme),tile(Icons.notifications_none_rounded,'Notification Settings','Likes, comments, followers, messages and mentions',_notifications),tile(Icons.lock_outline,'Privacy','Private account, message privacy and blocked users',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PrivacySettingsPage()))),const SizedBox(height:18),const Text('Account & Security',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),const SizedBox(height:6),tile(Icons.volume_off_outlined,'Muted Users','Manage accounts you have muted',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const MutedUsersPage()))),tile(Icons.lock_reset_outlined,'Change Password','Update your account password',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const ChangePasswordPage()))),tile(Icons.security_outlined,'Two-Factor Authentication','Extra security for your account',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const TwoFactorPage()))),tile(Icons.circle_outlined,'Activity Status','Show or hide your active status',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const ActivityStatusPage()))),tile(Icons.delete_outline,'Delete Account','Permanently delete your account',()=>deleteAccount(context)),tile(Icons.logout_rounded,'Logout','Sign out of this device',()=>logoutUser(context))]));}
 }
@@ -2966,33 +2976,35 @@ void _openThemeSettingsFromProfile(BuildContext context) {
     builder: (sheetContext) => ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (context, mode, _) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text('Theme', style: TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text('Choose Light, Dark or System'),
-            ),
-            RadioListTile<ThemeMode>(
-              value: ThemeMode.light,
-              groupValue: mode,
-              title: const Text('Light'),
-              onChanged: (v) async { await setThemePreference(v!); if (sheetContext.mounted) Navigator.pop(sheetContext); },
-            ),
-            RadioListTile<ThemeMode>(
-              value: ThemeMode.dark,
-              groupValue: mode,
-              title: const Text('Dark'),
-              onChanged: (v) async { await setThemePreference(v!); if (sheetContext.mounted) Navigator.pop(sheetContext); },
-            ),
-            RadioListTile<ThemeMode>(
-              value: ThemeMode.system,
-              groupValue: mode,
-              title: const Text('System'),
-              onChanged: (v) async { await setThemePreference(v!); if (sheetContext.mounted) Navigator.pop(sheetContext); },
-            ),
-            const SizedBox(height: 12),
-          ],
+        child: RadioGroup<ThemeMode>(
+          groupValue: mode,
+          onChanged: (v) async {
+            if (v == null) return;
+            await setThemePreference(v);
+            if (sheetContext.mounted) Navigator.pop(sheetContext);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text('Theme', style: TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text('Choose Light, Dark or System'),
+              ),
+              const RadioListTile<ThemeMode>(
+                value: ThemeMode.light,
+                title: Text('Light'),
+              ),
+              const RadioListTile<ThemeMode>(
+                value: ThemeMode.dark,
+                title: Text('Dark'),
+              ),
+              const RadioListTile<ThemeMode>(
+                value: ThemeMode.system,
+                title: Text('System'),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
         ),
       ),
     ),
@@ -3018,8 +3030,8 @@ class _MutedUsersPageState extends State<MutedUsersPage>{
  final controller=TextEditingController();List<Map<String,dynamic>> muted=[];List<dynamic> results=[];bool searching=false;
  @override void initState(){super.initState();_load();}@override void dispose(){controller.dispose();super.dispose();}
  Future<void> _load()async{final v=await loadMutedUsers();if(mounted)setState(()=>muted=v);}
- Future<void> _search(String value)async{final q=value.trim();if(q.isEmpty){if(mounted)setState(()=>results=[]);return;}setState(()=>searching=true);try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');if(t==null||t.isEmpty)return;final res=await http.get(Uri.parse('$apiBaseUrl/users/search?q='+Uri.encodeQueryComponent(q)),headers:{'Authorization':'Bearer $t'});if(res.statusCode==200){final d=jsonDecode(res.body);if(mounted)setState(()=>results=d is List?d:[]);}}catch(_){}finally{if(mounted)setState(()=>searching=false);}}
- Future<void> _mute(dynamic u)async{final id=u['id'];if(id==null||muted.any((x)=>x['id'].toString()==id.toString()))return;final item=<String,dynamic>{'id':id,'username':u['username']??'user','name':u['name']??'','profileImageUrl':u['profileImageUrl']};final updated=[...muted,item];await saveMutedUsers(updated);if(!mounted)return;setState((){muted=updated;results=[];controller.clear();});ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('@'+item['username'].toString()+' muted')));}
+ Future<void> _search(String value)async{final q=value.trim();if(q.isEmpty){if(mounted)setState(()=>results=[]);return;}setState(()=>searching=true);try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');if(t==null||t.isEmpty)return;final res=await http.get(Uri.parse('$apiBaseUrl/users/search?q=${Uri.encodeQueryComponent(q)}'),headers:{'Authorization':'Bearer $t'});if(res.statusCode==200){final d=jsonDecode(res.body);if(mounted)setState(()=>results=d is List?d:[]);}}catch(_){}finally{if(mounted)setState(()=>searching=false);}}
+ Future<void> _mute(dynamic u)async{final id=u['id'];if(id==null||muted.any((x)=>x['id'].toString()==id.toString()))return;final item=<String,dynamic>{'id':id,'username':u['username']??'user','name':u['name']??'','profileImageUrl':u['profileImageUrl']};final updated=[...muted,item];await saveMutedUsers(updated);if(!mounted)return;setState((){muted=updated;results=[];controller.clear();});ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text("@${item['username']} muted")));}
  Future<void> _unmute(Map<String,dynamic> u)async{final updated=muted.where((x)=>x['id'].toString()!=u['id'].toString()).toList();await saveMutedUsers(updated);if(mounted)setState(()=>muted=updated);}
  Widget _avatar(dynamic url)=>url!=null&&url.toString().isNotEmpty?CircleAvatar(radius:24,backgroundImage:NetworkImage(url.toString())):const CircleAvatar(radius:24,child:Icon(Icons.person_outline));
  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Muted Users'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[
@@ -3045,7 +3057,7 @@ class ActivityStatusPage extends StatefulWidget{const ActivityStatusPage({super.
 class _ActivityStatusPageState extends State<ActivityStatusPage>{bool enabled=true;@override void initState(){super.initState();_load();}Future<void> _load()async{final p=await SharedPreferences.getInstance();if(mounted)setState(()=>enabled=p.getBool(_activityStatusKey)??true);}Future<void> _toggle(bool v)async{final p=await SharedPreferences.getInstance();await p.setBool(_activityStatusKey,v);if(mounted)setState(()=>enabled=v);}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Activity Status'),centerTitle:true),body:SwitchListTile(secondary:const Icon(Icons.circle_outlined),title:const Text('Show Activity Status',style:TextStyle(fontWeight:FontWeight.w600)),subtitle:const Text('Let others see when you are active'),value:enabled,onChanged:_toggle));}
 
 Future<void> logoutUser(BuildContext context)async{final p=await SharedPreferences.getInstance();await p.remove('accessToken');if(!context.mounted)return;Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const LoginPage()),(route)=>false);}
-Future<void> deleteAccount(BuildContext context)async{final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Delete Account'),content:const Text('This permanently deletes your account, posts, likes, comments and follows. This action cannot be undone.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),ElevatedButton(style:ElevatedButton.styleFrom(backgroundColor:Colors.red,foregroundColor:Colors.white),onPressed:()=>Navigator.pop(ctx,true),child:const Text('Delete'))]));if(ok!=true)return;try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');final res=await http.delete(Uri.parse('$apiBaseUrl/users/me'),headers:{'Authorization':'Bearer $t'});if(!context.mounted)return;if(res.statusCode==200){await p.clear();if(!context.mounted)return;Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const LoginPage()),(route)=>false);}else{ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Failed to delete account ('+res.statusCode.toString()+')')));}}catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Connection error: $e')));}}
+Future<void> deleteAccount(BuildContext context)async{final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Delete Account'),content:const Text('This permanently deletes your account, posts, likes, comments and follows. This action cannot be undone.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),ElevatedButton(style:ElevatedButton.styleFrom(backgroundColor:Colors.red,foregroundColor:Colors.white),onPressed:()=>Navigator.pop(ctx,true),child:const Text('Delete'))]));if(ok!=true)return;try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');final res=await http.delete(Uri.parse('$apiBaseUrl/users/me'),headers:{'Authorization':'Bearer $t'});if(!context.mounted)return;if(res.statusCode==200){await p.clear();if(!context.mounted)return;Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const LoginPage()),(route)=>false);}else{ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Failed to delete account (${res.statusCode})')));}}catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Connection error: $e')));}}
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -5749,7 +5761,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                   : Theme.of(context)
                                       .colorScheme
                                       .primary
-                                      .withOpacity(0.06),
+                                      .withValues(alpha: 0.06),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 14,
@@ -5760,7 +5772,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                                   CircleAvatar(
                                     radius: 22,
                                     backgroundColor: _getNotificationColor(type)
-                                        .withOpacity(0.15),
+                                        .withValues(alpha: 0.15),
                                     child: Icon(
                                       _getNotificationIcon(type),
                                       color: _getNotificationColor(type),
@@ -5915,7 +5927,7 @@ class _UserListPageState extends State<UserListPage> {
                     color: Theme.of(context)
                         .colorScheme
                         .primary
-                        .withOpacity(0.12),
+                        .withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -6213,13 +6225,13 @@ class _CreatePostPageState extends State<CreatePostPage> {
       request.fields['title'] = title;
 
       final content = _contentController.text.trim();
-      final tagText = _taggedUsers.isEmpty ? '' : '\n\nTagged: ' + _taggedUsers.map((u) => '@$u').join(' ');
+      final tagText = _taggedUsers.isEmpty ? '' : '\n\nTagged: ${_taggedUsers.map((u) => '@$u').join(' ')}';
       final finalContent = content + tagText;
       if (finalContent.isNotEmpty) {
         request.fields['content'] = finalContent;
       }
 
-      request.fields['backgroundColor'] = '#' + _selectedBackgroundColor.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
+      request.fields['backgroundColor'] = '#${_selectedBackgroundColor.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
       request.fields['fontSize'] = _selectedFontSize.round().toString();
 
       if (_selectedImage != null && _imageBytes != null) {
@@ -6332,7 +6344,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                     right: 10,
                     child: CircleAvatar(
                       radius: 18,
-                      backgroundColor: Colors.black.withOpacity(0.6),
+                      backgroundColor: Colors.black.withValues(alpha: 0.6),
                       child: IconButton(
                         padding: EdgeInsets.zero,
                         icon: const Icon(
@@ -6349,7 +6361,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                     right: 10,
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.black.withOpacity(0.65),
+                        backgroundColor: Colors.black.withValues(alpha: 0.65),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
@@ -6371,10 +6383,10 @@ class _CreatePostPageState extends State<CreatePostPage> {
                 padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surfaceContainerHighest
-                      .withOpacity(0.3),
+                      .withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: theme.colorScheme.outline.withOpacity(0.3),
+                    color: theme.colorScheme.outline.withValues(alpha: 0.3),
                     width: 1.5,
                   ),
                 ),
@@ -6383,7 +6395,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                     CircleAvatar(
                       radius: 28,
                       backgroundColor: theme.colorScheme.primary
-                          .withOpacity(0.12),
+                          .withValues(alpha: 0.12),
                       child: Icon(
                         Icons.add_photo_alternate_rounded,
                         size: 30,
@@ -6481,7 +6493,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
             Container(
               margin: const EdgeInsets.only(top: 16),
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),border: Border.all(color: theme.colorScheme.outline.withOpacity(.25))),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(14),border: Border.all(color: theme.colorScheme.outline.withValues(alpha: .25))),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start,children:[
                 Row(children:[const Icon(Icons.person_add_alt_1_outlined,size:20),const SizedBox(width:8),const Text('Tag people',style:TextStyle(fontWeight:FontWeight.w700))]),
                 const SizedBox(height:8),
@@ -6522,8 +6534,8 @@ class _CreatePostPageState extends State<CreatePostPage> {
                 }).toList(),
               ),
               const SizedBox(height: 14),
-              Row(children: [const Text('Font size', style: TextStyle(fontWeight: FontWeight.w600)), const Spacer(), Text(_selectedFontSize.round().toString() + ' px', style: const TextStyle(fontWeight: FontWeight.bold))]),
-              Slider(min: 16, max: 40, divisions: 12, value: _selectedFontSize, label: _selectedFontSize.round().toString() + ' px', onChanged: (value) => setState(() => _selectedFontSize = value)),
+              Row(children: [const Text('Font size', style: TextStyle(fontWeight: FontWeight.w600)), const Spacer(), Text('${_selectedFontSize.round()} px', style: const TextStyle(fontWeight: FontWeight.bold))]),
+              Slider(min: 16, max: 40, divisions: 12, value: _selectedFontSize, label: '${_selectedFontSize.round()} px', onChanged: (value) => setState(() => _selectedFontSize = value)),
               const SizedBox(height: 14),
             ],
 
