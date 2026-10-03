@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Request,
   UseGuards,
@@ -43,6 +45,26 @@ export class MessagesController {
     };
   }
 
+  @Post('keys/public')
+  async savePublicKey(
+    @Request() request: any,
+    @Body('publicKey') publicKey: string,
+  ) {
+    return this.messagesService.savePublicKey(
+      request.user.sub,
+      publicKey,
+    );
+  }
+
+  @Get('keys/public/:userId')
+  async getPublicKey(
+    @Param('userId') userId: string,
+  ) {
+    return this.messagesService.getPublicKey(
+      Number(userId),
+    );
+  }
+
   @Get(':userId')
   async getMessages(
     @Param('userId') userId: string,
@@ -64,6 +86,54 @@ export class MessagesController {
       request.user.sub,
       Number(userId),
       body.content,
+    );
+  }
+
+  @Patch('message/:messageId')
+  async editMessage(
+    @Param('messageId') messageId: string,
+    @Body() body: { content: string },
+    @Request() request: any,
+  ) {
+    return this.messagesService.editMessage(
+      Number(messageId),
+      Number(request.user.sub),
+      body.content,
+    );
+  }
+
+  @Patch(':messageId')
+  async editMessageDirect(
+    @Param('messageId') messageId: string,
+    @Body() body: { content: string },
+    @Request() request: any,
+  ) {
+    return this.messagesService.editMessage(
+      Number(messageId),
+      Number(request.user.sub),
+      body.content,
+    );
+  }
+
+  @Delete('message/:messageId')
+  async deleteMessage(
+    @Param('messageId') messageId: string,
+    @Request() request: any,
+  ) {
+    return this.messagesService.deleteMessage(
+      Number(messageId),
+      Number(request.user.sub),
+    );
+  }
+
+  @Delete(':messageId')
+  async deleteMessageDirect(
+    @Param('messageId') messageId: string,
+    @Request() request: any,
+  ) {
+    return this.messagesService.deleteMessage(
+      Number(messageId),
+      Number(request.user.sub),
     );
   }
 }
