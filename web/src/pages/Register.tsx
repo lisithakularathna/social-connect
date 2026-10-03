@@ -37,11 +37,10 @@ function Register() {
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={register}>
-        <div className="logo-container">
-          <img src="/vite.svg" alt="Social Connect" className="auth-logo" />
-        </div>
-        <h1>Social Connect</h1>
-        <p className="auth-subtitle">Create a new account</p>
+        <div className="auth-brand-mark" aria-hidden="true">S</div>
+        <p className="auth-kicker">Join the conversation</p>
+        <h1>Create your account</h1>
+        <p className="auth-subtitle">A thoughtful space for sharing, discovering, and connecting.</p>
 
         {error && <div className="error">{error}</div>}
 

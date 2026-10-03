@@ -71,6 +71,14 @@ function Home() {
       <Navbar />
 
       <main className="feed-page">
+        <header className="feed-header">
+          <div>
+            <p className="eyebrow">YOUR COMMUNITY</p>
+            <h1>Good morning{account?.username ? `, ${account.username}` : ""}</h1>
+            <p>See what&apos;s happening in your circle today.</p>
+          </div>
+          <button className="feed-create-button" onClick={() => window.location.assign("/create")}>Create post <span aria-hidden="true">+</span></button>
+        </header>
         {/* Stories Section at the top */}
         <StoriesBar posts={posts} currentUser={account} />
 

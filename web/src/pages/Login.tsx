@@ -33,11 +33,10 @@ function Login() {
   return (
     <div className="auth-page">
       <form className="auth-card" onSubmit={login}>
-        <div className="logo-container">
-          <img src="/vite.svg" alt="Social Connect" className="auth-logo" />
-        </div>
-        <h1>Social Connect</h1>
-        <p className="auth-subtitle">Sign in to continue</p>
+        <div className="auth-brand-mark" aria-hidden="true">S</div>
+        <p className="auth-kicker">Welcome back</p>
+        <h1>Sign in to Social Connect</h1>
+        <p className="auth-subtitle">Keep up with the people and ideas that matter to you.</p>
 
         {error && <div className="error">{error}</div>}
 
