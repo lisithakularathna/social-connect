@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Request,
   UseGuards,
@@ -43,6 +44,22 @@ export class CommentsController {
   ) {
     return this.commentsService.getPostComments(
       Number(postId),
+    );
+  }
+
+  // Update comment
+  @Patch(':id')
+  async updateComment(
+    @Param('id') id: string,
+    @Body() body: {
+      content: string;
+    },
+    @Request() request: any,
+  ) {
+    return this.commentsService.updateComment(
+      Number(id),
+      body.content,
+      request.user.sub,
     );
   }
 
