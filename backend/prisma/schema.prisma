@@ -28,6 +28,7 @@ model User {
   // Messages
   messagesSent     Message[] @relation("MessageSender")
   messagesReceived Message[] @relation("MessageReceiver")
+  savedPosts       SavedPost[]
 }
 
 model Post {
@@ -43,6 +44,7 @@ model Post {
 
   likes     Like[]
   comments  Comment[]
+  savedBy   SavedPost[]
 
   @@index([authorId])
 }
@@ -105,4 +107,19 @@ model Message {
 
   @@index([senderId])
   @@index([receiverId])
+}
+
+model SavedPost {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  userId    Int
+  postId    Int
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
 }
