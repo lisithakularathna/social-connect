@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
+import PostCard from "../components/PostCard";
 import api from "../api/api";
 
 interface User {
@@ -16,7 +17,18 @@ interface User {
 interface Post {
   id: number;
   title: string;
+  content?: string;
   imageUrl?: string;
+  backgroundColor?: string;
+  fontSize?: number;
+  authorId: number;
+  createdAt?: string;
+  author?: {
+    id?: number;
+    username?: string;
+    name?: string;
+    profileImageUrl?: string;
+  };
 }
 
 interface FollowStats {
@@ -28,6 +40,7 @@ function UserProfile() {
   const { userId } = useParams<{ userId: string }>();
   const [user, setUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [followStats, setFollowStats] = useState<FollowStats>({
     followersCount: 0,
     followingCount: 0,
@@ -64,8 +77,10 @@ function UserProfile() {
         setIsFollowing(false);
       }
 
-      // Message is available for every other user.
-      setCanMessage(Number(meRes.data?.id) !== Number(userId));
+      // Store current user ID to decide whether to show Message button
+      if (meRes.data?.id) {
+        setCurrentUserId(Number(meRes.data.id));
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -206,18 +221,61 @@ function UserProfile() {
                 <div
                   className="grid-post"
                   key={post.id}
+                  onClick={() => setSelectedPost(post)}
+                  title={post.title}
                 >
-                  {post.imageUrl && (
-                    <img
-                      src={post.imageUrl}
-                      alt={post.title}
-                    />
+                  {post.imageUrl ? (
+                    <img src={post.imageUrl} alt={post.title} />
+                  ) : (
+                    <div
+                      className="text-post-preview"
+                      style={{
+                        backgroundColor: post.backgroundColor || "#F3F4F6",
+                        color:
+                          (post.backgroundColor || "") === "#111827"
+                            ? "#fff"
+                            : "#111827",
+                        fontSize: `${Math.min(Math.max((post.fontSize || 20) * 0.7, 13), 20)}px`,
+                      }}
+                    >
+                      {post.title}
+                    </div>
                   )}
+                  <div className="grid-post-overlay">
+                    <span className="grid-post-overlay-title">{post.title}</span>
+                  </div>
                 </div>
               ))}
             </div>
           )}
         </section>
+
+        {selectedPost && (
+          <div
+            className="post-modal-overlay"
+            onClick={() => setSelectedPost(null)}
+          >
+            <div
+              className="post-modal-content"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="post-modal-close"
+                onClick={() => setSelectedPost(null)}
+                title="Close"
+              >
+                ×
+              </button>
+              <PostCard
+                post={selectedPost}
+                onDelete={() => {
+                  loadUserProfile();
+                  setSelectedPost(null);
+                }}
+              />
+            </div>
+          </div>
+        )}
       </main>
       
       <BottomNav />
