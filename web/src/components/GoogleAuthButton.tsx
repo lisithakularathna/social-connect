@@ -32,9 +32,15 @@ export default function GoogleAuthButton({ isLogin = true }: { isLogin?: boolean
 
     window.google.accounts.id.renderButton(
       document.getElementById("google-signin-button"),
-      { theme: "outline", size: "large", width: "100%", shape: "rectangular" }
+      {
+        theme: "outline",
+        size: "large",
+        width: "100%",
+        shape: "rectangular",
+        text: isLogin ? "signin_with" : "signup_with",
+      }
     );
-  }, [navigate]);
+  }, [navigate, isLogin]);
 
   return <div id="google-signin-button" style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}></div>;
 }
