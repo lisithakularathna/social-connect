@@ -4,14 +4,63 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 import { db } from '../prisma/db.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 
 @Injectable()
 export class MessagesService {
+  private keysFilePath = path.join(process.cwd(), 'e2ee_keys.json');
+  private publicKeys = new Map<number, string>();
+
   constructor(
     private readonly notificationsService: NotificationsService,
-  ) {}
+  ) {
+    this.loadPublicKeys();
+  }
+
+  private loadPublicKeys() {
+    try {
+      if (fs.existsSync(this.keysFilePath)) {
+        const data = JSON.parse(fs.readFileSync(this.keysFilePath, 'utf-8'));
+        for (const [k, v] of Object.entries(data)) {
+          this.publicKeys.set(Number(k), String(v));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load E2EE public keys:', err);
+    }
+  }
+
+  private async persistPublicKeys() {
+    try {
+      const obj: Record<number, string> = {};
+      for (const [k, v] of this.publicKeys.entries()) {
+        obj[k] = v;
+      }
+      await fs.promises.writeFile(this.keysFilePath, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('Failed to persist E2EE public keys:', err);
+    }
+  }
+
+  async savePublicKey(userId: number, publicKey: string) {
+    if (!publicKey || typeof publicKey !== 'string') {
+      throw new BadRequestException('Invalid public key');
+    }
+    this.publicKeys.set(userId, publicKey);
+    await this.persistPublicKeys();
+    return { success: true };
+  }
+
+  async getPublicKey(userId: number) {
+    const key = this.publicKeys.get(userId);
+    return {
+      publicKey: key || null,
+    };
+  }
 
   async canMessage(currentUserId: number, targetUserId: number) {
     // Allow messaging anyone including self (for testing)
@@ -41,23 +90,39 @@ export class MessagesService {
       );
     }
 
-    const [sent, received] = await Promise.all([
-      db.orm.public.Message
+    let rawMessages: any[] = [];
+    if (Number(currentUserId) === Number(targetUserId)) {
+      rawMessages = await db.orm.public.Message
         .where({
           senderId: currentUserId,
           receiverId: targetUserId,
         })
-        .all(),
+        .all();
+    } else {
+      const [sent, received] = await Promise.all([
+        db.orm.public.Message
+          .where({
+            senderId: currentUserId,
+            receiverId: targetUserId,
+          })
+          .all(),
 
-      db.orm.public.Message
-        .where({
-          senderId: targetUserId,
-          receiverId: currentUserId,
-        })
-        .all(),
-    ]);
+        db.orm.public.Message
+          .where({
+            senderId: targetUserId,
+            receiverId: currentUserId,
+          })
+          .all(),
+      ]);
+      rawMessages = [...sent, ...received];
+    }
 
-    const messages = [...sent, ...received];
+    // Deduplicate by message ID to prevent any duplicate messages
+    const messageMap = new Map<number, any>();
+    for (const msg of rawMessages) {
+      messageMap.set(msg.id, msg);
+    }
+    const messages = Array.from(messageMap.values());
 
     messages.sort(
       (a, b) =>
@@ -116,11 +181,18 @@ export class MessagesService {
       sender[0]?.name ||
       'Someone';
 
-    await this.notificationsService.createNotification(
-      targetUserId,
-      'message',
-      `${senderName} sent you a message`,
-    );
+    if (Number(currentUserId) !== Number(targetUserId)) {
+      const isEncrypted = cleanContent.startsWith('e2ee:v1:');
+      const notificationText = isEncrypted
+        ? `${senderName} sent you an encrypted message`
+        : `${senderName} sent you a message`;
+
+      await this.notificationsService.createNotification(
+        targetUserId,
+        'message',
+        notificationText,
+      );
+    }
 
     return message;
   }
@@ -203,5 +275,47 @@ export class MessagesService {
         };
       })
       .filter(Boolean);
+  }
+
+  async editMessage(messageId: number, userId: number, content: string) {
+    const cleanContent = content?.trim();
+    if (!cleanContent) {
+      throw new BadRequestException('Message cannot be empty.');
+    }
+    const targetId = Number(messageId);
+    const currentId = Number(userId);
+
+    const msgs = await db.orm.public.Message.where({ id: targetId }).all();
+    const msg = msgs[0] ?? null;
+    if (!msg) {
+      throw new NotFoundException('Message not found');
+    }
+    if (Number(msg.senderId) !== currentId) {
+      throw new BadRequestException('You can only edit your own messages');
+    }
+    await db.orm.public.Message.where({ id: targetId }).update({
+      content: cleanContent,
+    });
+    return { ...msg, content: cleanContent, isEdited: true };
+  }
+
+  async deleteMessage(messageId: number, userId: number) {
+    const targetId = Number(messageId);
+    const currentId = Number(userId);
+
+    const msgs = await db.orm.public.Message.where({ id: targetId }).all();
+    const msg = msgs[0] ?? null;
+    if (!msg) {
+      throw new NotFoundException('Message not found');
+    }
+    if (Number(msg.senderId) !== currentId && Number(msg.receiverId) !== currentId) {
+      throw new BadRequestException('You cannot delete this message');
+    }
+    try {
+      await db.orm.public.Message.where({ id: targetId }).delete();
+    } catch (err) {
+      console.error('Delete message error:', err);
+    }
+    return { message: 'Message deleted successfully', id: targetId };
   }
 }
