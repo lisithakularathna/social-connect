@@ -5,7 +5,6 @@
 import 'dart:js_interop';
 
 import 'package:flutter/material.dart';
-import 'package:web/web.dart' as web;
 
 // JS-side function signatures
 @JS('socialConnectGoogleSignIn')
