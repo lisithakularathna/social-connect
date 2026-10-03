@@ -62,15 +62,6 @@ function App() {
         />
 
         <Route
-          path="/settings"
-          element={
-            <ProtectedRoute>
-              <Settings />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
           path="/user/:userId"
           element={
             <ProtectedRoute>
@@ -91,6 +82,11 @@ function App() {
         <Route
           path="/following"
           element={<ProtectedRoute><Following /></ProtectedRoute>}
+        />
+
+        <Route
+          path="/settings"
+          element={<ProtectedRoute><Settings /></ProtectedRoute>}
         />
 
         <Route
