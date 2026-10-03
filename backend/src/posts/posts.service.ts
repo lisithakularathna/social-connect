@@ -133,6 +133,7 @@ export class PostsService {
   async getMyPosts(userId: number) {
     const posts = await db.orm.public.Post
       .where({ authorId: userId })
+      .orderBy([(p) => p.createdAt.desc(), (p) => p.id.desc()])
       .all();
 
     return posts.map((post) => ({
@@ -140,6 +141,8 @@ export class PostsService {
       title: post.title,
       content: post.content,
       imageUrl: post.imageUrl,
+      backgroundColor: post.backgroundColor,
+      fontSize: post.fontSize,
       authorId: post.authorId,
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
@@ -149,6 +152,7 @@ export class PostsService {
   async getUserPosts(userId: number) {
     const posts = await db.orm.public.Post
       .where({ authorId: userId })
+      .orderBy([(p) => p.createdAt.desc(), (p) => p.id.desc()])
       .all();
 
     return posts.map((post) => ({
@@ -156,6 +160,8 @@ export class PostsService {
       title: post.title,
       content: post.content,
       imageUrl: post.imageUrl,
+      backgroundColor: post.backgroundColor,
+      fontSize: post.fontSize,
       authorId: post.authorId,
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
