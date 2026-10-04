@@ -54,8 +54,22 @@ function Profile() {
   const [bio, setBio] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const navigate = useNavigate();
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 2500);
+  };
+
+  const handleShareProfile = () => {
+    if (navigator.clipboard && user) {
+      const url = `${window.location.origin}/user/${user.id}`;
+      navigator.clipboard.writeText(url);
+      showToast("Profile link copied to clipboard! 📋");
+    }
+  };
 
   const loadProfile = async () => {
     try {
@@ -164,10 +178,20 @@ function Profile() {
 
   // Separate original own posts from reposts
   const ownPosts = posts.filter(
-    (p) => !p.title?.startsWith("Reposted:") && !p.content?.includes("↻ Reposted")
+    (p: any) =>
+      !p.isRepost &&
+      !p.repostedBy &&
+      !p.title?.startsWith("Reposted:") &&
+      !p.content?.includes("↻ Reposted") &&
+      !p.content?.includes("[REPOST_META:")
   );
   const reposts = posts.filter(
-    (p) => p.title?.startsWith("Reposted:") || p.content?.includes("↻ Reposted")
+    (p: any) =>
+      p.isRepost ||
+      p.repostedBy ||
+      p.title?.startsWith("Reposted:") ||
+      p.content?.includes("↻ Reposted") ||
+      p.content?.includes("[REPOST_META:")
   );
 
   // Active list based on selected tab
@@ -183,58 +207,81 @@ function Profile() {
       <Navbar />
 
       <main className="profile-page">
-        <header className="profile-header">
-          {/* Sized profile picture (well proportioned) */}
-          <div className="profile-avatar-section">
-            <div className="profile-avatar">
+        {/* ── Hero Profile Card (Modern Glassmorphic Hero) ── */}
+        <section className="profile-hero-card">
+          <div className="profile-avatar-wrapper">
+            <div className="profile-avatar-ring">
               {user.profileImageUrl ? (
-                <img src={user.profileImageUrl} alt="Profile" />
+                <img
+                  src={user.profileImageUrl}
+                  alt={user.username || "Profile"}
+                  className="profile-avatar-img"
+                />
               ) : (
-                <div className="avatar-placeholder">
+                <div className="profile-avatar-fallback">
                   {(user.username || "U")[0].toUpperCase()}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="profile-details-section">
+          <div className="profile-info-col">
             <div className="profile-title-row">
-              <h1 className="profile-username">{user.username}</h1>
-              <div className="profile-actions">
+              <div className="profile-identity">
+                <h1 className="profile-main-username">{user.username}</h1>
+                {user.name && <p className="profile-full-name">{user.name}</p>}
+              </div>
+
+              <div className="profile-actions-row">
                 <button
-                  className="edit-profile-btn"
+                  type="button"
+                  className="profile-btn-edit"
                   onClick={() => setIsEditing(true)}
                 >
-                  Edit Profile
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  <span>Edit Profile</span>
                 </button>
+
                 <button
-                  className="message-btn"
-                  onClick={() => navigate(`/messages/${user.id}`)}
-                  title="Messages"
+                  type="button"
+                  onClick={handleShareProfile}
+                  className="profile-btn-icon"
+                  title="Share profile / Copy link"
                 >
-                  ✉
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="18" cy="5" r="3" />
+                    <circle cx="6" cy="12" r="3" />
+                    <circle cx="18" cy="19" r="3" />
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                  </svg>
                 </button>
               </div>
             </div>
 
-            <div className="profile-stats">
-              <div className="stat">
-                <strong>{ownPosts.length}</strong> posts
+            {/* Stats row with interactive feel */}
+            <div className="profile-stats-bar">
+              <div className="profile-stat-card" onClick={() => setActiveTab("posts")}>
+                <span className="profile-stat-number">{ownPosts.length}</span>
+                <span className="profile-stat-label">Posts</span>
               </div>
-              <div className="stat">
-                <strong>{followStats.followersCount}</strong> followers
+              <div className="profile-stat-card" onClick={() => navigate("/following")}>
+                <span className="profile-stat-number">{followStats.followersCount}</span>
+                <span className="profile-stat-label">Followers</span>
               </div>
-              <div className="stat">
-                <strong>{followStats.followingCount}</strong> following
+              <div className="profile-stat-card" onClick={() => navigate("/following")}>
+                <span className="profile-stat-number">{followStats.followingCount}</span>
+                <span className="profile-stat-label">Following</span>
               </div>
             </div>
 
-            <div className="profile-bio-section">
-              {user.name && <h2 className="profile-name">{user.name}</h2>}
-              {user.bio && <p className="profile-bio">{user.bio}</p>}
-            </div>
+            {/* Bio */}
+            {user.bio && <p className="profile-bio-text">{user.bio}</p>}
           </div>
-        </header>
+        </section>
 
         {/* ── Profile Tabs: POSTS / SAVED / REPOSTS ── */}
         <div className="profile-tabs-nav">
@@ -470,6 +517,13 @@ function Profile() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Toast notification */}
+        {toastMsg && (
+          <div className="profile-toast">
+            {toastMsg}
           </div>
         )}
       </main>
