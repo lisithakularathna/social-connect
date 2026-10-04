@@ -19,6 +19,14 @@ interface Post {
     name?: string;
     profileImageUrl?: string;
   };
+  isRepost?: boolean;
+  repostedBy?: {
+    id?: number;
+    username?: string;
+    name?: string;
+    profileImageUrl?: string;
+  };
+  originalPostId?: number;
 }
 
 interface Comment {
@@ -59,6 +67,31 @@ function formatTimeAgo(dateString?: string): string {
 
 function PostCard({ post, onDelete }: Props) {
   const navigate = useNavigate();
+
+  // Check if post is a repost
+  const isRepost = Boolean(
+    post.isRepost ||
+    post.repostedBy ||
+    post.title?.startsWith("Reposted:") ||
+    post.content?.includes("↻ Reposted from post #") ||
+    post.content?.includes("[REPOST_META:")
+  );
+
+  const reposter = post.repostedBy || (isRepost ? post.author : null);
+
+  // Clean title & content if legacy or not yet parsed
+  let displayTitle = post.title || "";
+  let displayContent = post.content || "";
+
+  if (displayTitle.startsWith("Reposted:")) {
+    displayTitle = displayTitle.replace(/^Reposted:\s*/i, "").trim();
+  }
+  if (displayContent.includes("[REPOST_META:")) {
+    displayContent = displayContent.replace(/\[REPOST_META:[^\]]+\]\s*/g, "").trim();
+  }
+  if (displayContent.includes("↻ Reposted from post #")) {
+    displayContent = displayContent.replace(/\n*↻\s*Reposted from post #\d+/g, "").trim();
+  }
 
   // Current user
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
@@ -377,10 +410,27 @@ function PostCard({ post, onDelete }: Props) {
     }
   };
 
-  // Direct Message & Share
+  // Direct Message & Share with Post Attachment
   const handleOpenMessages = () => {
     setShowShareMenu(false);
-    navigate(`/messages/${post.authorId}`);
+    const sharePayload = {
+      id: post.originalPostId || post.id,
+      title: displayTitle,
+      content: displayContent,
+      imageUrl: post.imageUrl,
+      backgroundColor: post.backgroundColor,
+      fontSize: post.fontSize,
+      author: {
+        id: post.authorId,
+        username: post.author?.username || "user",
+        name: post.author?.name,
+        profileImageUrl: post.author?.profileImageUrl,
+      },
+    };
+    try {
+      sessionStorage.setItem("pending_share_post", JSON.stringify(sharePayload));
+    } catch {}
+    navigate(`/messages/${post.authorId}`, { state: { sharePost: sharePayload } });
   };
 
   const handleCopyLink = () => {
@@ -471,6 +521,42 @@ function PostCard({ post, onDelete }: Props) {
         </div>
       )}
 
+      {/* ── Modern Repost Header (Twitter/Threads style) ── */}
+      {isRepost && reposter && (
+        <div className="repost-indicator-banner">
+          <div className="repost-indicator-icon">
+            <svg
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="17 1 21 5 17 9" />
+              <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+              <polyline points="7 23 3 19 7 15" />
+              <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+            </svg>
+          </div>
+          <span className="repost-indicator-text">
+            <strong
+              className="repost-indicator-user"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (reposter.id) navigate(`/user/${reposter.id}`);
+              }}
+              title={`View @${reposter.username || "user"}'s profile`}
+            >
+              {reposter.username || reposter.name || "Someone"}
+            </strong>{" "}
+            reposted
+          </span>
+        </div>
+      )}
+
       {/* Post Header */}
       <div className="post-header">
         <div
@@ -525,10 +611,10 @@ function PostCard({ post, onDelete }: Props) {
             fontSize: post.fontSize || 22,
           }}
         >
-          {post.title}
+          {displayTitle}
         </div>
       ) : (
-        <img src={post.imageUrl} alt={post.title} className="post-image" />
+        <img src={post.imageUrl} alt={displayTitle} className="post-image" />
       )}
 
       {/* Post Actions & Content */}
@@ -592,42 +678,17 @@ function PostCard({ post, onDelete }: Props) {
             </svg>
           </button>
 
-          {/* Message / Share */}
-          <div style={{ position: "relative" }}>
-            <button
-              ref={shareBtnRef}
-              onClick={() => setShowShareMenu((v) => !v)}
-              className="action-btn"
-              title="Share or send message"
-            >
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
-
-            {showShareMenu && (
-              <>
-                <div
-                  className="share-popover-backdrop"
-                  onClick={() => setShowShareMenu(false)}
-                />
-                <div className="share-popover">
-                  <button onClick={handleOpenMessages}>
-                    💬 Send Message to @{post.author?.username || "author"}
-                  </button>
-                  <button onClick={handleCopyLink}>
-                    🔗 Copy Post Link
-                  </button>
-                  {typeof navigator !== "undefined" && "share" in navigator && (
-                    <button onClick={handleNativeShare}>
-                      ↗️ Share via Apps...
-                    </button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          {/* Message / Send Post in Chat */}
+          <button
+            onClick={handleOpenMessages}
+            className="action-btn"
+            title={`Send message to @${post.author?.username || "author"} with post`}
+          >
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
 
           <div className="action-btn-spacer" />
 
@@ -664,8 +725,8 @@ function PostCard({ post, onDelete }: Props) {
           >
             {post.author?.username || "user"}
           </span>
-          <span>{post.title}</span>
-          {post.content && <p className="post-body-text">{post.content}</p>}
+          <span>{displayTitle}</span>
+          {displayContent && <p className="post-body-text">{displayContent}</p>}
         </div>
 
         {/* ── Comments Preview (1 or 2 comments under post) ── */}
