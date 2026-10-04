@@ -34,22 +34,7 @@ body { margin: 0; background: var(--bg-color); color: var(--text-primary); font-
 button, input, textarea { font: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-.left-sidebar { position: fixed; inset: 0 auto 0 0; width: 248px; display: flex; flex-direction: column; padding: 28px 16px 20px; background: var(--nav-bg); backdrop-filter: blur(18px); border-right: 1px solid var(--border-color); z-index: 100; }
-.sidebar-logo { margin: 0 12px 48px; color: var(--text-primary); font-family: 'Playfair Display', Georgia, serif; font-size: 25px; font-weight: 700; letter-spacing: -.6px; cursor: pointer; }
-.sidebar-logo::first-letter { color: var(--accent); }
-.sidebar-nav { display: flex; flex: 1; flex-direction: column; gap: 6px; }
-.sidebar-link { display: flex; align-items: center; gap: 14px; padding: 13px 14px; border: 0; border-radius: 12px; color: var(--text-secondary); background: transparent; text-decoration: none; font-size: 15px; font-weight: 500; transition: background .2s, color .2s, transform .2s; }
-.sidebar-link:hover { color: var(--text-primary); background: var(--input-bg); transform: translateX(2px); }
-.sidebar-link.active { color: var(--text-primary); background: var(--input-bg); font-weight: 700; }
-.sidebar-icon { width: 22px; color: currentColor; font-size: 21px; line-height: 1; text-align: center; }
-.sidebar-profile-icon { width: 24px; height: 24px; margin: 0; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-color); }
-.sidebar-bottom { display: flex; flex-direction: column; gap: 8px; }
-.more-menu-container { position: relative; }
-.more-btn { width: 100%; text-align: left; }
-.more-dropdown { position: absolute; left: 0; bottom: calc(100% + 8px); width: 208px; padding: 6px; display: flex; flex-direction: column; gap: 2px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: 0 16px 38px var(--shadow-color); }
-.more-dropdown button { padding: 11px 12px; border: 0; border-radius: 9px; color: var(--text-primary); background: transparent; text-align: left; cursor: pointer; font-size: 14px; }
-.more-dropdown button:hover { background: var(--input-bg); }
-.more-dropdown .logout-text { color: var(--accent); }
+/* Navbar styles are maintained in Navbar.css */
 
 .feed-page, .profile-page, .create-page, .search-page, .activity-page, .messages-page { width: min(100% - 32px, 620px); margin: 0 auto; padding: 38px 0 60px; }
 .feed-page { margin-left: max(calc(50vw - 310px), 280px); }
@@ -62,8 +47,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .create-card, .profile-info { padding: 30px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 18px; box-shadow: 0 10px 30px var(--shadow-color); }
 .profile-page { width: min(100% - 32px, 935px); margin-left: max(calc(50vw - 467px), 280px); }
 
-@media (max-width: 900px) { .left-sidebar { width: 76px; align-items: center; padding: 24px 10px; } .sidebar-logo { display: none; } .sidebar-link { justify-content: center; padding: 13px; } .sidebar-link { font-size: 0; } .sidebar-icon { margin: 0; } .more-btn { font-size: 0; } .more-dropdown { left: calc(100% + 8px); bottom: 0; } .feed-page, .profile-page, .create-page, .search-page, .activity-page, .messages-page { width: min(100% - 32px, 620px); margin-left: auto; margin-right: auto; padding-left: 44px; } }
-@media (max-width: 600px) { .left-sidebar { top: auto; right: 0; width: 100%; height: 64px; flex-direction: row; padding: 8px 14px; border-top: 1px solid var(--border-color); border-right: 0; } .sidebar-nav { flex-direction: row; justify-content: space-around; width: 100%; } .sidebar-bottom { display: none; } .sidebar-link { padding: 10px; } .feed-page, .profile-page, .create-page, .search-page, .activity-page, .messages-page { width: 100%; padding: 18px 12px 84px; } }
+@media (max-width: 900px) { .feed-page, .profile-page, .create-page, .search-page, .activity-page, .messages-page { width: min(100% - 32px, 620px); margin-left: auto; margin-right: auto; padding-left: 44px; } }
+@media (max-width: 600px) { .feed-page, .profile-page, .create-page, .search-page, .activity-page, .messages-page { width: 100%; padding: 18px 12px 84px; } }
 
 .edit-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(0,0,0,.72); backdrop-filter: blur(6px); }
 .edit-modal { width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; padding: 26px; color: var(--text-primary); background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 18px; box-shadow: 0 24px 70px rgba(0,0,0,.25); }
@@ -249,9 +234,6 @@ button { transition: transform .2s ease, background .2s ease, border-color .2s e
 .feed-page, .profile-page, .create-page, .search-page, .activity-page, .messages-page, .settings-page { animation: page-enter .45s ease both; }
 @keyframes page-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-.left-sidebar { box-shadow: 12px 0 34px color-mix(in srgb, var(--shadow-color) 55%, transparent); }
-.sidebar-link { position: relative; }
-.sidebar-link.active::before { content: ''; position: absolute; left: -16px; width: 3px; height: 22px; border-radius: 0 4px 4px 0; background: var(--accent); }
 .feed-header, .settings-page-header { position: relative; }
 .feed-header::after, .settings-page-header::after { content: ''; display: block; width: 42px; height: 3px; margin-top: 18px; border-radius: 10px; background: var(--accent); }
 .feed-header { margin-bottom: 34px; }
@@ -265,5 +247,4 @@ button { transition: transform .2s ease, background .2s ease, border-color .2s e
 .settings-section { transition: transform .2s ease, box-shadow .2s ease; }
 .settings-section:hover { transform: translateY(-2px); box-shadow: 0 10px 28px var(--shadow-color); }
 .settings-save-btn, .settings-logout-btn { cursor: pointer; }
-@media (max-width: 900px) { .sidebar-link.active::before { left: -10px; } }
-@media (max-width: 600px) { .sidebar-link.active::before { left: 50%; bottom: -8px; width: 20px; height: 3px; transform: translateX(-50%); border-radius: 4px; } .feed-header::after, .settings-page-header::after { margin-top: 14px; } }
+@media (max-width: 600px) { .feed-header::after, .settings-page-header::after { margin-top: 14px; } }
