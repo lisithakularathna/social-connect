@@ -10,6 +10,8 @@ interface Post {
   title: string;
   content?: string;
   imageUrl?: string;
+  backgroundColor?: string;
+  fontSize?: number;
   authorId: number;
   author?: {
     id?: number;
@@ -18,6 +20,14 @@ interface Post {
     profileImageUrl?: string;
   };
   createdAt?: string;
+  isRepost?: boolean;
+  repostedBy?: {
+    id?: number;
+    username?: string;
+    name?: string;
+    profileImageUrl?: string;
+  };
+  originalPostId?: number;
 }
 
 interface CurrentUser {
