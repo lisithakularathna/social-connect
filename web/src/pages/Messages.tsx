@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
@@ -88,11 +88,46 @@ function formatDateDivider(dateString: string): string {
   }
 }
 
+function cleanSidebarPreview(txt?: string): string {
+  if (!txt) return "";
+  const match = txt.match(/^\[POST_SHARE:(.+?)\]\s*(.*)$/s);
+  if (match) {
+    return match[2] ? `📷 ${match[2]}` : "📷 Shared a post";
+  }
+  return txt;
+}
+
+function cleanPinnedSnippet(txt?: string): string {
+  if (!txt) return "Pinned message";
+  const shareMatch = txt.match(/^\[POST_SHARE:(.+?)\]\s*([\s\S]*)$/);
+  if (shareMatch) {
+    try {
+      const data = JSON.parse(shareMatch[1]);
+      const userText = shareMatch[2]?.trim();
+      const title = data.title || "Post";
+      if (userText) {
+        return `📷 Shared post: "${title}" • ${userText}`;
+      }
+      return `📷 Shared post: "${title}"`;
+    } catch {
+      return "📷 Shared post";
+    }
+  }
+  if (txt.startsWith("[IMAGE:")) return "📷 Image";
+  if (txt.startsWith("[VOICE:")) return "🎤 Voice message";
+  if (txt.startsWith("[FILE:")) return "📎 Attachment";
+  return txt.length > 85 ? txt.slice(0, 85) + "..." : txt;
+}
+
 const POPULAR_EMOJIS = ["👋", "❤️", "😂", "🔥", "👍", "✨", "🎉", "🙌", "💯", "😊"];
 
 function Messages() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { userId } = useParams<{ userId?: string }>();
+
+  // Attached post to share in this chat
+  const [attachedPost, setAttachedPost] = useState<any>(null);
 
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [pinnedUserIds, setPinnedUserIds] = useState<number[]>([]);
@@ -283,7 +318,26 @@ function Messages() {
         console.error("Follows fetch error:", e);
       }
 
-      setConversations(convItems);
+      // 3. Always prepend "You (Message yourself)"
+      const existingSelf = convItems.find((c) => Number(c.user.id) === Number(me.id));
+      const otherConversations = convItems.filter((c) => Number(c.user.id) !== Number(me.id));
+
+      const youConversation: ConversationItem = {
+        user: {
+          id: me.id,
+          username: me.username || "You",
+          name: "You (Message yourself)",
+          profileImageUrl: me.profileImageUrl,
+        },
+        lastMessage: existingSelf?.lastMessage || {
+          id: 0,
+          content: "Message yourself • Notes, posts & reminders",
+          senderId: me.id,
+          createdAt: "",
+        },
+      };
+
+      setConversations([youConversation, ...otherConversations]);
     } catch (err) {
       console.error("Failed to load sidebar:", err);
     } finally {
@@ -388,7 +442,7 @@ function Messages() {
   const handleSendOrEdit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const content = message.trim();
-    if (!userId || !content || sending) return;
+    if (!userId || (!content && !attachedPost) || sending) return;
 
     // Handle Edit Mode
     if (editingMessage) {
@@ -440,11 +494,17 @@ function Messages() {
     // Normal Send
     setSending(true);
     try {
-      let payloadContent = content;
+      let finalContent = content;
+      if (attachedPost) {
+        const shareTag = `[POST_SHARE:${JSON.stringify(attachedPost)}]`;
+        finalContent = content ? `${shareTag} ${content}` : shareTag;
+      }
+
+      let payloadContent = finalContent;
       if (currentUserId && userId) {
         try {
           const key = await getConversationCryptoKey(currentUserId, Number(userId));
-          payloadContent = await encryptE2EEMessage(content, key);
+          payloadContent = await encryptE2EEMessage(finalContent, key);
         } catch (e) {
           console.error("Encryption error during send:", e);
         }
@@ -455,7 +515,7 @@ function Messages() {
 
       const readableMsg: Message = {
         ...newMsg,
-        content: content,
+        content: finalContent,
         isEncrypted: isEncryptedMessage(newMsg.content),
       };
 
@@ -464,6 +524,7 @@ function Messages() {
         return [...prev, readableMsg];
       });
       setMessage("");
+      setAttachedPost(null);
       setShowEmojiPicker(false);
 
       // Update last message in sidebar
@@ -474,7 +535,7 @@ function Messages() {
               ...c,
               lastMessage: {
                 id: newMsg.id,
-                content: content,
+                content: finalContent,
                 senderId: newMsg.senderId,
                 createdAt: newMsg.createdAt,
               },
@@ -584,6 +645,28 @@ function Messages() {
     }
   }, [userId]);
 
+  // Check for shared post from navigation or session storage
+  useEffect(() => {
+    try {
+      const statePost = (location.state as any)?.sharePost;
+      if (statePost) {
+        setAttachedPost(statePost);
+        sessionStorage.removeItem("pending_share_post");
+        setTimeout(() => inputRef.current?.focus(), 150);
+        return;
+      }
+      const saved = sessionStorage.getItem("pending_share_post");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed) {
+          setAttachedPost(parsed);
+          sessionStorage.removeItem("pending_share_post");
+          setTimeout(() => inputRef.current?.focus(), 150);
+        }
+      }
+    } catch {}
+  }, [location, userId]);
+
   // Polling for new messages every 3s
   useEffect(() => {
     if (!userId) return;
@@ -593,17 +676,27 @@ function Messages() {
     return () => clearInterval(interval);
   }, [userId]);
 
-  // Filter conversations with search query and sort pinned to TOP
+  // Filter conversations with search query and sort pinned to TOP, keeping "YOU" always first
   const filteredConversations = conversations
     .filter((c) => {
       const q = searchQuery.toLowerCase().trim();
       if (!q) return true;
+      if (c.user.id === currentUserId) {
+        return (
+          "you message yourself notes".includes(q) ||
+          (c.user.username && c.user.username.toLowerCase().includes(q)) ||
+          (c.user.name && c.user.name.toLowerCase().includes(q))
+        );
+      }
       return (
         (c.user.username && c.user.username.toLowerCase().includes(q)) ||
         (c.user.name && c.user.name.toLowerCase().includes(q))
       );
     })
     .sort((a, b) => {
+      if (a.user.id === currentUserId) return -1;
+      if (b.user.id === currentUserId) return 1;
+
       const aPinned = pinnedUserIds.includes(a.user.id) ? 1 : 0;
       const bPinned = pinnedUserIds.includes(b.user.id) ? 1 : 0;
       return bPinned - aPinned;
@@ -667,36 +760,40 @@ function Messages() {
                 filteredConversations.map((item) => {
                   const isSelected = userId === String(item.user.id);
                   const isPinned = pinnedUserIds.includes(item.user.id);
+                  const isSelf = currentUserId !== null && Number(item.user.id) === Number(currentUserId);
 
                   return (
                     <div
                       key={item.user.id}
                       className={`conversation-item ${isSelected ? "selected" : ""} ${
                         isPinned ? "pinned" : ""
-                      }`}
+                      } ${isSelf ? "self-item" : ""}`}
                       onClick={() => navigate(`/messages/${item.user.id}`)}
                     >
                       <div className="conv-avatar-wrap">
-                        <div className="conv-avatar">
+                        <div className={`conv-avatar ${isSelf ? "self-avatar" : ""}`}>
                           {item.user.profileImageUrl ? (
                             <img
                               src={item.user.profileImageUrl}
                               alt={item.user.username || "User"}
                             />
                           ) : (
-                            (item.user.username || item.user.name || "U")[0].toUpperCase()
+                            isSelf ? "Y" : (item.user.username || item.user.name || "U")[0].toUpperCase()
                           )}
                         </div>
-                        <div className="conv-online-dot" />
+                        {!isSelf && <div className="conv-online-dot" />}
                       </div>
 
                       <div className="conv-info">
                         <div className="conv-header-row">
                           <div className="conv-name-wrap">
                             <span className="conv-name">
-                              {item.user.username || item.user.name || "User"}
+                              {isSelf ? "You" : (item.user.username || item.user.name || "User")}
                             </span>
-                            {isPinned && (
+                            {isSelf && (
+                              <span className="conv-self-badge">Message yourself</span>
+                            )}
+                            {isPinned && !isSelf && (
                               <span className="conv-pin-indicator" title="Pinned chat">
                                 📌
                               </span>
@@ -709,18 +806,20 @@ function Messages() {
                           )}
                         </div>
                         <p className="conv-last-msg">
-                          {item.lastMessage?.content || "Tap to chat"}
+                          {cleanSidebarPreview(item.lastMessage?.content) || (isSelf ? "Notes to yourself" : "Tap to chat")}
                         </p>
                       </div>
 
                       {/* Quick Pin / Unpin Button on Hover */}
-                      <button
-                        className="conv-pin-action-btn"
-                        onClick={(e) => togglePinUser(item.user.id, e)}
-                        title={isPinned ? "Unpin chat" : "Pin chat to top"}
-                      >
-                        {isPinned ? "✕" : "📌"}
-                      </button>
+                      {!isSelf && (
+                        <button
+                          className="conv-pin-action-btn"
+                          onClick={(e) => togglePinUser(item.user.id, e)}
+                          title={isPinned ? "Unpin chat" : "Pin chat to top"}
+                        >
+                          {isPinned ? "✕" : "📌"}
+                        </button>
+                      )}
                     </div>
                   );
                 })
@@ -768,45 +867,52 @@ function Messages() {
                     ←
                   </button>
 
-                  <div
-                    className="chat-header-avatar"
-                    onClick={() => navigate(`/user/${selectedUser.id}`)}
-                  >
-                    {selectedUser.profileImageUrl ? (
-                      <img
-                        src={selectedUser.profileImageUrl}
-                        alt={selectedUser.username || "User"}
-                      />
-                    ) : (
-                      (selectedUser.username || "U")[0].toUpperCase()
-                    )}
-                  </div>
+                  {(() => {
+                    const isSelfChat = currentUserId !== null && Number(selectedUser.id) === Number(currentUserId);
+                    return (
+                      <>
+                        <div
+                          className={`chat-header-avatar ${isSelfChat ? "self-avatar" : ""}`}
+                          onClick={() => navigate(isSelfChat ? "/profile" : `/user/${selectedUser.id}`)}
+                        >
+                          {selectedUser.profileImageUrl ? (
+                            <img
+                              src={selectedUser.profileImageUrl}
+                              alt={selectedUser.username || "User"}
+                            />
+                          ) : (
+                            isSelfChat ? "Y" : (selectedUser.username || "U")[0].toUpperCase()
+                          )}
+                        </div>
 
-                  <div className="chat-header-user-info">
-                    <div
-                      className="chat-header-name"
-                      onClick={() => navigate(`/user/${selectedUser.id}`)}
-                    >
-                      {selectedUser.username || selectedUser.name || "User"}
-                    </div>
-                    <div className="chat-header-status">
-                      <span className="status-dot" />
-                      <span>Active now</span>
-                    </div>
-                  </div>
+                        <div className="chat-header-user-info">
+                          <div
+                            className="chat-header-name"
+                            onClick={() => navigate(isSelfChat ? "/profile" : `/user/${selectedUser.id}`)}
+                          >
+                            {isSelfChat ? "You (Message yourself)" : (selectedUser.username || selectedUser.name || "User")}
+                          </div>
+                          <div className="chat-header-status">
+                            <span className="status-dot" />
+                            <span>{isSelfChat ? "Notes & messages to yourself" : "Active now"}</span>
+                          </div>
+                        </div>
 
-                  <div className="chat-header-actions">
-                    <div className="e2ee-header-indicator" title="Messages in this chat are end-to-end encrypted">
-                      <span className="e2ee-indicator-icon">🔒</span>
-                      <span className="e2ee-indicator-text">E2EE Protected</span>
-                    </div>
-                    <button
-                      className="chat-profile-btn"
-                      onClick={() => navigate(`/user/${selectedUser.id}`)}
-                    >
-                      Profile
-                    </button>
-                  </div>
+                        <div className="chat-header-actions">
+                          <div className="e2ee-header-indicator" title="Messages in this chat are end-to-end encrypted">
+                            <span className="e2ee-indicator-icon">🔒</span>
+                            <span className="e2ee-indicator-text">E2EE Protected</span>
+                          </div>
+                          <button
+                            className="chat-profile-btn"
+                            onClick={() => navigate(isSelfChat ? "/profile" : `/user/${selectedUser.id}`)}
+                          >
+                            {isSelfChat ? "My Profile" : "Profile"}
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </header>
 
                 {/* ── Top Pinned Message Banner (WhatsApp/Telegram style) ── */}
@@ -816,10 +922,12 @@ function Messages() {
                     onClick={scrollToPinnedMessage}
                     title="Click to jump to pinned message"
                   >
-                    <span className="pinned-icon">📌</span>
+                    <div className="pinned-icon-bubble">
+                      <span className="pinned-icon">📌</span>
+                    </div>
                     <div className="pinned-info">
                       <span className="pinned-label">Pinned Message</span>
-                      <span className="pinned-snippet">{pinnedMessage.content}</span>
+                      <span className="pinned-snippet">{cleanPinnedSnippet(pinnedMessage.content)}</span>
                     </div>
                     <button
                       className="unpin-msg-btn"
@@ -853,38 +961,77 @@ function Messages() {
                   )}
 
                   {messages.length === 0 ? (
-                    <div className="chat-empty-greeting">
-                      <div className="chat-empty-avatar">
-                        {selectedUser.profileImageUrl ? (
-                          <img
-                            src={selectedUser.profileImageUrl}
-                            alt={selectedUser.username || "User"}
-                          />
-                        ) : (
-                          (selectedUser.username || "U")[0].toUpperCase()
-                        )}
+                    currentUserId !== null && Number(selectedUser.id) === Number(currentUserId) ? (
+                      <div className="chat-empty-greeting">
+                        <div className="chat-empty-avatar self">
+                          📝
+                        </div>
+                        <h3>Message yourself 📌</h3>
+                        <p>Keep personal notes, to-dos, links, and shared posts handy across all your devices.</p>
+                        <div className="quick-prompts">
+                          <button
+                            className="quick-prompt-btn"
+                            onClick={() => {
+                              setMessage("📌 To-do: ");
+                              inputRef.current?.focus();
+                            }}
+                          >
+                            📌 Note / To-do
+                          </button>
+                          <button
+                            className="quick-prompt-btn"
+                            onClick={() => {
+                              setMessage("🔗 Saved link: ");
+                              inputRef.current?.focus();
+                            }}
+                          >
+                            🔗 Save Link
+                          </button>
+                          <button
+                            className="quick-prompt-btn"
+                            onClick={() => {
+                              setMessage("💡 Idea: ");
+                              inputRef.current?.focus();
+                            }}
+                          >
+                            💡 Idea
+                          </button>
+                        </div>
                       </div>
-                      <h3>Say hi to {selectedUser.username || "your friend"}! 👋</h3>
-                      <p>Send a message to break the ice and start talking.</p>
+                    ) : (
+                      <div className="chat-empty-greeting">
+                        <div className="chat-empty-avatar">
+                          {selectedUser.profileImageUrl ? (
+                            <img
+                              src={selectedUser.profileImageUrl}
+                              alt={selectedUser.username || "User"}
+                            />
+                          ) : (
+                            (selectedUser.username || "U")[0].toUpperCase()
+                          )}
+                        </div>
+                        <h3>Say hi to {selectedUser.username || "your friend"}! 👋</h3>
+                        <p>Send a message to break the ice and start talking.</p>
 
-                      <div className="quick-prompts">
-                        <button
-                          className="quick-prompt-btn"
-                          onClick={() => handleSendOrEdit()}
-                        >
-                          👋 Hi!
-                        </button>
-                        <button
-                          className="quick-prompt-btn"
-                          onClick={() => {
-                            setMessage("Hey there! How's it going?");
-                            inputRef.current?.focus();
-                          }}
-                        >
-                          Hey there! How's it going?
-                        </button>
+                        <div className="quick-prompts">
+                          <button
+                            className="quick-prompt-btn"
+                            onClick={() => handleSendOrEdit()}
+                          >
+                            👋 Hi!
+                          </button>
+                          <button
+                            className="quick-prompt-btn"
+                            onClick={() => {
+                              setMessage("Hey there! How's it going?");
+                              inputRef.current?.focus();
+                            }}
+                          >
+                            Hey there! How's it going?
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )
                   ) : (
                     messages.map((item, index) => {
                       const mine = item.senderId === currentUserId;
@@ -902,6 +1049,18 @@ function Messages() {
                       const isDropdownOpen = activeDropdownMsgId === item.id;
                       const isThisPinned = pinnedMessage?.id === item.id;
                       const isHighlighted = highlightedMsgId === item.id;
+
+                      let postShareData: any = null;
+                      let displayMessageText = item.content;
+                      const shareMatch = item.content.match(/^\[POST_SHARE:(.+?)\]\s*([\s\S]*)$/);
+                      if (shareMatch) {
+                        try {
+                          postShareData = JSON.parse(shareMatch[1]);
+                          displayMessageText = shareMatch[2] || "";
+                        } catch (err) {
+                          console.error("Failed to parse shared post payload:", err);
+                        }
+                      }
 
                       return (
                         <div key={item.id} style={{ display: "contents" }}>
@@ -938,8 +1097,101 @@ function Messages() {
 
                             {/* Message Bubble */}
                             <div className="message-bubble">
+                              {/* Attached Post Card preview inside Chat */}
+                              {postShareData && (
+                                <div
+                                  className="chat-shared-post-card"
+                                  onClick={() => {
+                                    if (postShareData.id) {
+                                      navigate(`/post/${postShareData.id}`);
+                                    }
+                                  }}
+                                  title="Click to view shared post"
+                                >
+                                  {/* Top Author Row */}
+                                  <div className="chat-shared-post-author-row">
+                                    <div className="chat-shared-post-author-info">
+                                      {postShareData.author?.profileImageUrl ? (
+                                        <img
+                                          src={postShareData.author.profileImageUrl}
+                                          alt=""
+                                          className="chat-shared-post-author-avatar"
+                                        />
+                                      ) : (
+                                        <div className="chat-shared-post-author-initial">
+                                          {(postShareData.author?.username || postShareData.author?.name || "U")[0].toUpperCase()}
+                                        </div>
+                                      )}
+                                      <span className="chat-shared-post-author-name">
+                                        @{postShareData.author?.username || postShareData.author?.name || "user"}
+                                      </span>
+                                    </div>
+                                    <span className="chat-shared-post-badge">Post</span>
+                                  </div>
+
+                                  {/* Media (Image or Color text preview) */}
+                                  {postShareData.imageUrl ? (
+                                    <img
+                                      src={postShareData.imageUrl}
+                                      alt="Post preview"
+                                      className="chat-shared-post-media"
+                                    />
+                                  ) : postShareData.backgroundColor ? (
+                                    <div
+                                      className="chat-shared-post-text-bg"
+                                      style={{
+                                        background: postShareData.backgroundColor,
+                                        fontSize: postShareData.fontSize
+                                          ? `${Math.max(13, Math.min(18, postShareData.fontSize - 6))}px`
+                                          : "14px",
+                                      }}
+                                    >
+                                      {postShareData.content || postShareData.title || "Post"}
+                                    </div>
+                                  ) : null}
+
+                                  {/* Meta Details: Title & Description */}
+                                  <div className="chat-shared-post-meta">
+                                    {postShareData.title && (
+                                      <h4 className="chat-shared-post-title">
+                                        {postShareData.title}
+                                      </h4>
+                                    )}
+
+                                    {postShareData.content &&
+                                      postShareData.content.trim() !== (postShareData.title || "").trim() && (
+                                        <p className="chat-shared-post-desc">
+                                          {postShareData.content}
+                                        </p>
+                                    )}
+
+                                    <div className="chat-shared-post-view-link">
+                                      <span>View post</span>
+                                      <svg
+                                        viewBox="0 0 24 24"
+                                        width="12"
+                                        height="12"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="2.5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      >
+                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                        <polyline points="15 3 21 3 21 9" />
+                                        <line x1="10" y1="14" x2="21" y2="3" />
+                                      </svg>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="message-text-row">
-                                <p>{item.content}</p>
+                                {displayMessageText ? (
+                                  <p>{displayMessageText}</p>
+                                ) : !postShareData ? (
+                                  <p>{item.content}</p>
+                                ) : null}
 
                                 {/* ── WhatsApp-style Small Down Arrow (⌄) inside Bubble ── */}
                                 <button
@@ -996,7 +1248,9 @@ function Messages() {
 
                                   <button
                                     className="msg-dropdown-item"
-                                    onClick={() => copyMessageText(item.content)}
+                                    onClick={() =>
+                                      copyMessageText(displayMessageText || item.content)
+                                    }
                                   >
                                     <span>📋</span>
                                     <span>Copy Text</span>
@@ -1096,6 +1350,62 @@ function Messages() {
                   </div>
                 )}
 
+                {/* ── Attached Post Banner above Input Bar ── */}
+                {attachedPost && (
+                  <div className="attached-post-banner">
+                    <div className="attached-post-preview-card">
+                      {attachedPost.imageUrl ? (
+                        <img
+                          src={attachedPost.imageUrl}
+                          alt="Post thumbnail"
+                          className="attached-post-thumb"
+                        />
+                      ) : (
+                        <div
+                          className="attached-post-color-thumb"
+                          style={{
+                            background:
+                              attachedPost.backgroundColor ||
+                              "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                          }}
+                        >
+                          {(attachedPost.content || attachedPost.title || "P").slice(0, 15)}
+                        </div>
+                      )}
+
+                      <div className="attached-post-info">
+                        <div className="attached-post-header">
+                          <span className="attached-post-tag">Replying to post</span>
+                          <span className="attached-post-dot">•</span>
+                          <span className="attached-post-author">
+                            @{attachedPost.author?.username || attachedPost.author?.name || "user"}
+                          </span>
+                        </div>
+                        {attachedPost.title && (
+                          <div className="attached-post-title">
+                            {attachedPost.title}
+                          </div>
+                        )}
+                        {attachedPost.content &&
+                          attachedPost.content.trim() !== (attachedPost.title || "").trim() && (
+                            <div className="attached-post-desc">
+                              {attachedPost.content}
+                            </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="attached-post-close-btn"
+                      onClick={() => setAttachedPost(null)}
+                      title="Remove attached post"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
                 {/* ── Message Input Bar ── */}
                 <form className="message-input-bar" onSubmit={handleSendOrEdit}>
                   {/* Emoji Toggle */}
@@ -1135,6 +1445,10 @@ function Messages() {
                     placeholder={
                       editingMessage
                         ? "Edit your message..."
+                        : attachedPost
+                        ? "Add a message about this post..."
+                        : currentUserId !== null && Number(selectedUser.id) === Number(currentUserId)
+                        ? "Note to yourself..."
                         : `Message ${selectedUser.username || "friend"}...`
                     }
                     disabled={sending}
@@ -1143,7 +1457,7 @@ function Messages() {
                   <button
                     type="submit"
                     className="send-msg-btn"
-                    disabled={!message.trim() || sending}
+                    disabled={(!message.trim() && !attachedPost) || sending}
                     title={editingMessage ? "Update message" : "Send message"}
                   >
                     {editingMessage ? (
