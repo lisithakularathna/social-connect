@@ -14,6 +14,48 @@
   box-shadow: 0 14px 32px var(--shadow-color);
 }
 
+/* ── Modern Repost Header Indicator (Twitter/Threads style) ── */
+.repost-indicator-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px 8px 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 12%, var(--border-color));
+}
+
+.repost-indicator-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #10b981;
+  flex-shrink: 0;
+}
+
+.repost-indicator-text {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repost-indicator-user {
+  color: var(--text-primary);
+  font-weight: 700;
+  cursor: pointer;
+  transition: color 0.15s ease, text-decoration 0.15s ease;
+}
+
+.repost-indicator-user:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 /* ── Header ── */
 .post-header {
   display: flex;
