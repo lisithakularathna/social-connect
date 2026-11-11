@@ -3,6 +3,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Post,
   Request,
   UseGuards,
@@ -16,53 +17,93 @@ import { FollowsService } from './follows.service.js';
 export class FollowsController {
   constructor(private readonly followsService: FollowsService) {}
 
-  @Post(':userId')
-  async followUser(
-    @Param('userId') userId: string,
-    @Request() request: any,
-  ) {
-    return this.followsService.followUser(
-      request.user.sub,
-      parseInt(userId, 10),
-    );
+  // ── Follow requests (declared before ":userId" routes) ──
+
+  @Get('requests')
+  async incomingRequests(@Request() request: any) {
+    return this.followsService.getIncomingRequests(request.user.sub);
   }
 
-  @Delete(':userId')
-  async unfollowUser(
-    @Param('userId') userId: string,
+  @Post('requests/:userId/approve')
+  async approve(
+    @Param('userId', ParseIntPipe) userId: number,
     @Request() request: any,
   ) {
-    return this.followsService.unfollowUser(
-      request.user.sub,
-      parseInt(userId, 10),
-    );
+    return this.followsService.approveRequest(request.user.sub, userId);
+  }
+
+  @Post('requests/:userId/decline')
+  async decline(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Request() request: any,
+  ) {
+    return this.followsService.declineRequest(request.user.sub, userId);
+  }
+
+  /** Cancel a request I sent. */
+  @Delete('requests/:userId')
+  async cancel(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Request() request: any,
+  ) {
+    return this.followsService.cancelRequest(request.user.sub, userId);
+  }
+
+  /** Remove someone who follows me. */
+  @Delete('followers/:userId')
+  async removeFollower(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Request() request: any,
+  ) {
+    return this.followsService.removeFollower(request.user.sub, userId);
   }
 
   @Get('followers/:userId')
-  async getFollowers(@Param('userId') userId: string) {
-    return this.followsService.getFollowers(parseInt(userId, 10));
+  async getFollowers(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Request() request: any,
+  ) {
+    return this.followsService.getFollowers(userId, request.user?.sub);
   }
 
   @Get('following/:userId')
-  async getFollowing(@Param('userId') userId: string) {
-    return this.followsService.getFollowing(parseInt(userId, 10));
+  async getFollowing(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Request() request: any,
+  ) {
+    return this.followsService.getFollowing(userId, request.user?.sub);
   }
 
   @Get('stats/:userId')
-  async getFollowStats(@Param('userId') userId: string) {
-    return this.followsService.getFollowStats(parseInt(userId, 10));
+  async getFollowStats(@Param('userId', ParseIntPipe) userId: number) {
+    return this.followsService.getFollowStats(userId);
   }
 
   @Get('check/:userId')
   async checkIfFollowing(
-    @Param('userId') userId: string,
+    @Param('userId', ParseIntPipe) userId: number,
     @Request() request: any,
   ) {
-    const isFollowing = await this.followsService.isFollowing(
-      request.user.sub,
-      parseInt(userId, 10),
-    );
+    const [isFollowing, isRequested] = await Promise.all([
+      this.followsService.isFollowing(request.user.sub, userId),
+      this.followsService.isRequested(request.user.sub, userId),
+    ]);
+    return { isFollowing, isRequested };
+  }
 
-    return { isFollowing };
+  @Post(':userId')
+  async followUser(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Request() request: any,
+  ) {
+    return this.followsService.followUser(request.user.sub, userId);
+  }
+
+  @Delete(':userId')
+  async unfollowUser(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Request() request: any,
+  ) {
+    return this.followsService.unfollowUser(request.user.sub, userId);
   }
 }

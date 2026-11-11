@@ -36,9 +36,11 @@ export class LikesController {
   @Get(':postId')
   async getPostLikes(
     @Param('postId') postId: string,
+    @Request() request: any,
   ) {
     return this.likesService.getPostLikes(
       Number(postId),
+      request.user?.sub,
     );
   }
 

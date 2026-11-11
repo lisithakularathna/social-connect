@@ -29,19 +29,37 @@ export class MessagesController {
     );
   }
 
+  @Get('unread-count')
+  async unreadCount(@Request() request: any) {
+    return this.messagesService.getUnreadCount(request.user.sub);
+  }
+
+  @Get('info/:userId')
+  async chatInfo(@Param('userId') userId: string, @Request() request: any) {
+    return this.messagesService.getChatInfo(request.user.sub, Number(userId));
+  }
+
+  @Post('read/:userId')
+  async markRead(@Param('userId') userId: string, @Request() request: any) {
+    return this.messagesService.markConversationRead(
+      request.user.sub,
+      Number(userId),
+    );
+  }
+
   @Get('can-message/:userId')
   async canMessage(
     @Param('userId') userId: string,
     @Request() request: any,
   ) {
-    const allowed =
-      await this.messagesService.canMessage(
-        request.user.sub,
-        Number(userId),
-      );
+    const permission = await this.messagesService.messagePermission(
+      request.user.sub,
+      Number(userId),
+    );
 
     return {
-      canMessage: allowed,
+      canMessage: permission.allowed,
+      reason: permission.reason,
     };
   }
 

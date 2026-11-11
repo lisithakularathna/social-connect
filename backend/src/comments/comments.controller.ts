@@ -41,9 +41,11 @@ export class CommentsController {
   @Get(':postId')
   async getPostComments(
     @Param('postId') postId: string,
+    @Request() request: any,
   ) {
     return this.commentsService.getPostComments(
       Number(postId),
+      request.user?.sub,
     );
   }
 

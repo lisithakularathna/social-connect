@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { JWT_SECRET, JWT_EXPIRES_IN } from './jwt.constants.js';
 
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
@@ -7,9 +8,9 @@ import { AuthService } from './auth.service.js';
 @Module({
   imports: [
     JwtModule.register({
-      secret: 'social-connect-secret-key',
+      secret: JWT_SECRET,
       signOptions: {
-        expiresIn: '1d',
+        expiresIn: JWT_EXPIRES_IN as any,
       },
     }),
   ],

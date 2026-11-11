@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,6 +10,12 @@ import * as path from 'path';
 
 import { db } from '../prisma/db.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import {
+  getBlockedIds,
+  isBlockedEitherWay,
+  isFollowing,
+  presenceFor,
+} from '../common/relations.js';
 
 @Injectable()
 export class MessagesService {
@@ -62,9 +69,96 @@ export class MessagesService {
     };
   }
 
+  /**
+   * Whether `currentUserId` may message `targetUserId`, honouring blocks and
+   * the target's "who can message you" setting. Replies inside an existing
+   * conversation the target started are always allowed.
+   */
   async canMessage(currentUserId: number, targetUserId: number) {
-    // Allow messaging anyone including self (for testing)
-    return true;
+    const result = await this.messagePermission(currentUserId, targetUserId);
+    return result.allowed;
+  }
+
+  async messagePermission(
+    currentUserId: number,
+    targetUserId: number,
+  ): Promise<{ allowed: boolean; reason: string | null }> {
+    if (Number(currentUserId) === Number(targetUserId)) {
+      return { allowed: true, reason: null };
+    }
+    const target = await db.orm.public.User.where({ id: targetUserId }).first();
+    if (!target) return { allowed: false, reason: 'User not found' };
+
+    if (await isBlockedEitherWay(currentUserId, targetUserId)) {
+      return { allowed: false, reason: "You can't message this account" };
+    }
+
+    const privacy = target.messagePrivacy ?? 'everyone';
+    if (privacy === 'everyone') return { allowed: true, reason: null };
+
+    const theyMessagedMe = await db.orm.public.Message
+      .where({ senderId: targetUserId, receiverId: currentUserId })
+      .first();
+    if (theyMessagedMe) return { allowed: true, reason: null };
+
+    if (privacy === 'nobody') {
+      return { allowed: false, reason: "This account isn't accepting messages" };
+    }
+    // 'followers': people who follow the target may message them.
+    if (await isFollowing(currentUserId, targetUserId)) {
+      return { allowed: true, reason: null };
+    }
+    return {
+      allowed: false,
+      reason: 'Only followers can message this account',
+    };
+  }
+
+  /** Header info for a chat: presence + whether you can reply. */
+  async getChatInfo(currentUserId: number, targetUserId: number) {
+    const [target, viewer, permission] = await Promise.all([
+      db.orm.public.User.where({ id: targetUserId }).first(),
+      db.orm.public.User.where({ id: currentUserId }).first(),
+      this.messagePermission(currentUserId, targetUserId),
+    ]);
+    if (!target) throw new NotFoundException('User not found');
+    return {
+      userId: target.id,
+      canMessage: permission.allowed,
+      reason: permission.reason,
+      ...presenceFor(target, viewer),
+    };
+  }
+
+  /** Total unread messages across conversations (for app badges). */
+  async getUnreadCount(currentUserId: number) {
+    const [unread, blocked] = await Promise.all([
+      db.orm.public.Message
+        .where({ receiverId: currentUserId })
+        .where((m) => m.readAt.isNull())
+        .all(),
+      getBlockedIds(currentUserId),
+    ]);
+    const visible = unread.filter(
+      (m) => m.senderId !== currentUserId && !blocked.has(m.senderId),
+    );
+    const byUser: Record<number, number> = {};
+    for (const m of visible) byUser[m.senderId] = (byUser[m.senderId] ?? 0) + 1;
+    return {
+      count: visible.length,
+      conversations: Object.keys(byUser).length,
+      byUser,
+    };
+  }
+
+  /** Mark everything `targetUserId` sent me as read. */
+  async markConversationRead(currentUserId: number, targetUserId: number) {
+    if (Number(currentUserId) === Number(targetUserId)) return { updated: 0 };
+    await db.orm.public.Message
+      .where({ senderId: targetUserId, receiverId: currentUserId })
+      .where((m) => m.readAt.isNull())
+      .updateAll({ readAt: new Date().toISOString() });
+    return { ok: true };
   }
 
   async getMessages(
@@ -79,16 +173,13 @@ export class MessagesService {
       throw new NotFoundException('User not found');
     }
 
-    const allowed = await this.canMessage(
-      currentUserId,
-      targetUserId,
-    );
-
-    if (!allowed) {
-      throw new BadRequestException(
-        'You can message this user only after you both follow each other.',
-      );
+    // Reading history is allowed even when you can no longer reply,
+    // except between blocked users.
+    if (await isBlockedEitherWay(currentUserId, targetUserId)) {
+      throw new ForbiddenException("You can't view this conversation");
     }
+
+    await this.markConversationRead(currentUserId, targetUserId);
 
     let rawMessages: any[] = [];
     if (Number(currentUserId) === Number(targetUserId)) {
@@ -154,14 +245,14 @@ export class MessagesService {
       throw new NotFoundException('User not found');
     }
 
-    const allowed = await this.canMessage(
+    const permission = await this.messagePermission(
       currentUserId,
       targetUserId,
     );
 
-    if (!allowed) {
-      throw new BadRequestException(
-        'You can message this user only after you both follow each other.',
+    if (!permission.allowed) {
+      throw new ForbiddenException(
+        permission.reason ?? "You can't message this account",
       );
     }
 
@@ -191,6 +282,7 @@ export class MessagesService {
         targetUserId,
         'message',
         notificationText,
+        { actorId: currentUserId },
       );
     }
 
@@ -198,7 +290,7 @@ export class MessagesService {
   }
 
   async getConversations(currentUserId: number) {
-    const [sent, received, following] = await Promise.all([
+    const [sent, received, following, blocked] = await Promise.all([
       db.orm.public.Message
         .where({ senderId: currentUserId })
         .all(),
@@ -210,7 +302,15 @@ export class MessagesService {
       db.orm.public.Follow
         .where({ followerId: currentUserId })
         .all(),
+      getBlockedIds(currentUserId),
     ]);
+
+    const unreadBy = new Map<number, number>();
+    for (const m of received) {
+      if (!m.readAt && m.senderId !== currentUserId) {
+        unreadBy.set(m.senderId, (unreadBy.get(m.senderId) ?? 0) + 1);
+      }
+    }
 
     const allMessages = [...sent, ...received];
     const conversationMap = new Map<number, any>();
@@ -251,13 +351,14 @@ export class MessagesService {
     }
 
     const users = await db.orm.public.User.all();
+    const viewer = users.find((u) => u.id === currentUserId) ?? null;
 
     return userIds
       .map((userId) => {
         const user = users.find((u) => u.id === userId);
         const lastMessage = conversationMap.get(userId);
 
-        if (!user) return null;
+        if (!user || blocked.has(userId)) return null;
 
         return {
           user: {
@@ -265,13 +366,16 @@ export class MessagesService {
             username: user.username,
             name: user.name,
             profileImageUrl: user.profileImageUrl,
+            ...presenceFor(user, viewer),
           },
           lastMessage: {
             id: lastMessage.id,
             content: lastMessage.content,
             senderId: lastMessage.senderId,
             createdAt: lastMessage.createdAt,
+            readAt: lastMessage.readAt ?? null,
           },
+          unreadCount: unreadBy.get(userId) ?? 0,
         };
       })
       .filter(Boolean);

@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -60,12 +61,40 @@ export class PostsController {
     @Request() request: any,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('scope') scope?: string,
   ) {
     return this.postsService.getAllPosts(
       request.user?.sub,
       page !== undefined ? parseInt(page, 10) : undefined,
       limit !== undefined ? parseInt(limit, 10) : undefined,
+      scope === 'following' ? 'following' : 'all',
     );
+  }
+
+  @Get('saved')
+  async getSaved(@Request() request: any) {
+    return this.postsService.getSavedPosts(request.user.sub);
+  }
+
+  /** Upload a saved list kept on the device by older app versions. */
+  @Post('saved/import')
+  async importSaved(@Request() request: any, @Body() body: { postIds?: unknown }) {
+    return this.postsService.importSaved(request.user.sub, body?.postIds);
+  }
+
+  @Get('search')
+  async search(@Request() request: any, @Query('q') q?: string) {
+    return this.postsService.searchPosts(q ?? '', request.user.sub);
+  }
+
+  @Post(':id/save')
+  async save(@Param('id', ParseIntPipe) id: number, @Request() request: any) {
+    return this.postsService.savePost(id, request.user.sub);
+  }
+
+  @Delete(':id/save')
+  async unsave(@Param('id', ParseIntPipe) id: number, @Request() request: any) {
+    return this.postsService.unsavePost(id, request.user.sub);
   }
 
   @Get('me')
@@ -77,11 +106,18 @@ export class PostsController {
 
   @Get('user/:id')
   async getUserPosts(
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
+    @Request() request: any,
   ) {
-    return this.postsService.getUserPosts(
-      parseInt(id),
-    );
+    return this.postsService.getUserPosts(id, request.user?.sub);
+  }
+
+  @Get(':id')
+  async getPost(
+    @Param('id', ParseIntPipe) id: number,
+    @Request() request: any,
+  ) {
+    return this.postsService.getPostById(id, request.user?.sub);
   }
 
   @Patch(':id')
