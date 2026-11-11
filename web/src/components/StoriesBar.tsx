@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import CreateStoryModal, { type StoryItem } from "./CreateStoryModal";
+import CreateStoryModal, {
+  type StoryItem,
+  type StoryViewer,
+  type StoryReaction,
+} from "./CreateStoryModal";
 import StoryViewerModal from "./StoryViewerModal";
 import "./StoriesBar.css";
 
@@ -30,6 +34,21 @@ interface StoriesBarProps {
 }
 
 const LOCAL_STORIES_STORAGE_KEY = "sc_stories_v1";
+
+const getStoryMeta = (storyId: string): { viewers: StoryViewer[]; reactions: StoryReaction[] } => {
+  try {
+    const raw = localStorage.getItem(`sc_story_meta_${storyId}`);
+    return raw ? JSON.parse(raw) : { viewers: [], reactions: [] };
+  } catch {
+    return { viewers: [], reactions: [] };
+  }
+};
+
+const saveStoryMeta = (storyId: string, meta: { viewers: StoryViewer[]; reactions: StoryReaction[] }) => {
+  try {
+    localStorage.setItem(`sc_story_meta_${storyId}`, JSON.stringify(meta));
+  } catch {}
+};
 
 export default function StoriesBar({ posts, currentUser }: StoriesBarProps) {
   const [localStories, setLocalStories] = useState<StoryItem[]>([]);
@@ -73,10 +92,58 @@ export default function StoriesBar({ posts, currentUser }: StoriesBarProps) {
     setLocalStories(updated);
   };
 
+  const handleRecordView = (storyId: string, viewer: StoryViewer) => {
+    setLocalStories((prev) => {
+      const updated = prev.map((s) => {
+        if (s.id === storyId) {
+          const currentViewers = s.viewers || [];
+          if (!currentViewers.some((v) => v.userId === viewer.userId)) {
+            return { ...s, viewers: [viewer, ...currentViewers] };
+          }
+        }
+        return s;
+      });
+      localStorage.setItem(LOCAL_STORIES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    const meta = getStoryMeta(storyId);
+    if (!meta.viewers.some((v) => v.userId === viewer.userId)) {
+      meta.viewers = [viewer, ...meta.viewers];
+      saveStoryMeta(storyId, meta);
+    }
+  };
+
+  const handleAddReaction = (storyId: string, reaction: StoryReaction) => {
+    setLocalStories((prev) => {
+      const updated = prev.map((s) => {
+        if (s.id === storyId) {
+          const currentReactions = s.reactions || [];
+          return { ...s, reactions: [reaction, ...currentReactions] };
+        }
+        return s;
+      });
+      localStorage.setItem(LOCAL_STORIES_STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+
+    const meta = getStoryMeta(storyId);
+    meta.reactions = [reaction, ...meta.reactions];
+    saveStoryMeta(storyId, meta);
+  };
+
   // Build combined stories list for viewing
-  const myStories = currentUser
+  const myStories = (currentUser
     ? localStories.filter((s) => s.userId === currentUser.id)
-    : [];
+    : []
+  ).map((s) => {
+    const meta = getStoryMeta(s.id);
+    return {
+      ...s,
+      viewers: s.viewers && s.viewers.length > 0 ? s.viewers : meta.viewers,
+      reactions: s.reactions && s.reactions.length > 0 ? s.reactions : meta.reactions,
+    };
+  });
 
   // Generate mock feed stories from recent posts so there's always lively stories in the strip
   const feedStories: StoryItem[] = [];
@@ -90,8 +157,11 @@ export default function StoriesBar({ posts, currentUser }: StoriesBarProps) {
     if (post.author && post.author.id && !seenUserIds.has(post.author.id)) {
       seenUserIds.add(post.author.id);
 
+      const storyId = `feed_story_${post.id}`;
+      const meta = getStoryMeta(storyId);
+
       feedStories.push({
-        id: `feed_story_${post.id}`,
+        id: storyId,
         userId: post.author.id,
         username: post.author.username || post.author.name || "User",
         userAvatar: post.author.profileImageUrl,
@@ -100,6 +170,8 @@ export default function StoriesBar({ posts, currentUser }: StoriesBarProps) {
         text: post.content || post.title,
         background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
         createdAt: post.createdAt || new Date().toISOString(),
+        viewers: meta.viewers,
+        reactions: meta.reactions,
       });
 
       if (feedStories.length >= 10) break;
@@ -210,8 +282,11 @@ export default function StoriesBar({ posts, currentUser }: StoriesBarProps) {
         onClose={() => setIsViewerOpen(false)}
         stories={allViewableStories}
         initialIndex={viewerStartIndex}
+        currentUser={currentUser}
         currentUserId={currentUser?.id}
         onDeleteStory={handleDeleteStory}
+        onRecordView={handleRecordView}
+        onAddReaction={handleAddReaction}
       />
     </section>
   );

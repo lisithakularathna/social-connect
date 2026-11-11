@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
+import SuggestedUsers from "../components/SuggestedUsers";
+import PostCard from "../components/PostCard";
 import api from "../api/api";
 import "./Search.css";
 
@@ -12,6 +14,9 @@ interface User {
   bio?: string;
   profileImageUrl?: string;
 }
+
+type SearchTab = "people" | "posts";
+type PostResult = Parameters<typeof PostCard>[0]["post"];
 
 interface SearchHistoryItem {
   id: string;
@@ -25,9 +30,14 @@ const STORAGE_KEY = "search_history";
 
 function Search() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<SearchTab>(
+    () => (searchParams.get("tab") === "posts" ? "posts" : "people")
+  );
+  const [query, setQuery] = useState(() => searchParams.get("q") || "");
   const [users, setUsers] = useState<User[]>([]);
+  const [postResults, setPostResults] = useState<PostResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
@@ -82,25 +92,81 @@ function Search() {
     saveHistory([]);
   };
 
-  const searchUsers = async (value: string) => {
+  const requestSeq = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
+
+  const runSearch = async (value: string, which: SearchTab = tab) => {
+    const seq = ++requestSeq.current;
+    try {
+      setLoading(true);
+      if (which === "posts") {
+        const response = await api.get(`/posts/search?q=${encodeURIComponent(value)}`);
+        if (seq !== requestSeq.current) return;
+        setPostResults(Array.isArray(response.data) ? response.data : []);
+      } else {
+        const response = await api.get(`/users/search?q=${encodeURIComponent(value)}`);
+        // Ignore responses for queries the user has already typed past.
+        if (seq !== requestSeq.current) return;
+        setUsers(Array.isArray(response.data) ? response.data : []);
+      }
+      setHasSearched(true);
+    } catch (error) {
+      if (seq !== requestSeq.current) return;
+      console.error("Search failed:", error);
+      setUsers([]);
+      setPostResults([]);
+      setHasSearched(true);
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
+  };
+
+  // Deep links like /search?tab=posts&q=%23travel (from #hashtags).
+  useEffect(() => {
+    const q = searchParams.get("q");
+    const t: SearchTab = searchParams.get("tab") === "posts" ? "posts" : "people";
+    if (q && q.trim()) {
+      // Syncing local state from the URL (e.g. a #hashtag link) is intended.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTab(t);
+      setQuery(q);
+      void runSearch(q.trim(), t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const switchTab = (next: SearchTab) => {
+    if (next === tab) return;
+    setTab(next);
+    setHasSearched(false);
+    const params: Record<string, string> = next === "posts" ? { tab: "posts" } : {};
+    if (query.trim()) params.q = query.trim();
+    setSearchParams(params, { replace: true });
+    if (query.trim()) void runSearch(query.trim(), next);
+  };
+
+  const searchUsers = (value: string, immediate = false) => {
     setQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
 
     if (!value.trim()) {
+      requestSeq.current++;
       setUsers([]);
+      setPostResults([]);
       setHasSearched(false);
+      setLoading(false);
       return;
     }
 
-    try {
+    if (immediate) {
+      void runSearch(value.trim());
+    } else {
       setLoading(true);
-      setHasSearched(true);
-      const response = await api.get(`/users/search?q=${encodeURIComponent(value)}`);
-      setUsers(Array.isArray(response.data) ? response.data : []);
-    } catch (error) {
-      console.error("Search failed:", error);
-      setUsers([]);
-    } finally {
-      setLoading(false);
+      debounceRef.current = setTimeout(() => void runSearch(value.trim()), 250);
     }
   };
 
@@ -113,8 +179,7 @@ function Search() {
     if (item.type === "user" && item.user) {
       navigate(`/user/${item.user.id}`);
     } else if (item.query) {
-      setQuery(item.query);
-      void searchUsers(item.query);
+      searchUsers(item.query, true);
     }
   };
 
@@ -148,23 +213,38 @@ function Search() {
             value={query}
             onChange={(e) => searchUsers(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search by username or name..."
+            placeholder={tab === "posts" ? "Search posts, #hashtags…" : "Search by username or name..."}
             autoFocus
           />
 
           {query && (
             <button
               className="search-box-clear-btn"
-              onClick={() => {
-                setQuery("");
-                setUsers([]);
-                setHasSearched(false);
-              }}
+              onClick={() => searchUsers("")}
               title="Clear input"
             >
               ✕
             </button>
           )}
+        </div>
+
+        <div className="sc-segmented sc-search-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={tab === "people"}
+            className={tab === "people" ? "active" : ""}
+            onClick={() => switchTab("people")}
+          >
+            People
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === "posts"}
+            className={tab === "posts" ? "active" : ""}
+            onClick={() => switchTab("posts")}
+          >
+            Posts
+          </button>
         </div>
 
         {/* LOADING STATE */}
@@ -174,8 +254,26 @@ function Search() {
           </div>
         )}
 
+        {/* POST RESULTS */}
+        {!loading && tab === "posts" && query.trim().length > 0 && (
+          <section className="search-results-section">
+            {postResults.length === 0 && hasSearched ? (
+              <div className="search-empty-state">
+                <h3>No posts found</h3>
+                <p>Nothing matches &ldquo;{query}&rdquo; yet.</p>
+              </div>
+            ) : (
+              <div className="feed">
+                {postResults.map((post) => (
+                  <PostCard key={post.id} post={post} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* LIVE SEARCH RESULTS (When query is present) */}
-        {!loading && query.trim().length > 0 && (
+        {!loading && tab === "people" && query.trim().length > 0 && (
           <section className="search-results-section">
             {users.length === 0 && hasSearched ? (
               <div className="search-empty-state">
@@ -287,6 +385,12 @@ function Search() {
               </div>
             )}
           </section>
+        )}
+
+        {!query && (
+          <div className="search-suggestions">
+            <SuggestedUsers title="People you may know" limit={8} showSeeAll={false} />
+          </div>
         )}
       </main>
 

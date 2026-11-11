@@ -258,9 +258,9 @@ export async function decryptE2EEMessage(
     const ciphertext = base64ToUint8Array(cipherB64);
 
     const decryptedBuffer = await window.crypto.subtle.decrypt(
-      { name: "AES-GCM", iv },
+      { name: "AES-GCM", iv: iv as any },
       key,
-      ciphertext
+      ciphertext as any
     );
 
     const dec = new TextDecoder();

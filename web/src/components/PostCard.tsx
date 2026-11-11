@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
 import ConfirmModal from "./ConfirmModal";
+import { showGlobalToast } from "../utils/toast";
+import { getCurrentUser, getUserIdFromToken } from "../utils/session";
+import { blockUser, containsHiddenWord, getHiddenWords, muteUser } from "../utils/prefs";
+import RichText from "./RichText";
+import { readableTextColor } from "../utils/color";
 import "./PostCard.css";
 
 interface Post {
@@ -13,6 +19,12 @@ interface Post {
   fontSize?: number;
   authorId: number;
   createdAt?: string;
+  likesCount?: number | null;
+  likesHidden?: boolean;
+  isLiked?: boolean;
+  isSaved?: boolean;
+  ownerId?: number;
+  commentsCount?: number;
   author?: {
     id?: number;
     username?: string;
@@ -44,6 +56,8 @@ interface Comment {
 interface Props {
   post: Post;
   onDelete?: () => void;
+  /** Open the full comments sheet immediately (post detail page). */
+  autoOpenComments?: boolean;
 }
 
 function formatTimeAgo(dateString?: string): string {
@@ -65,7 +79,7 @@ function formatTimeAgo(dateString?: string): string {
   }
 }
 
-function PostCard({ post, onDelete }: Props) {
+function PostCard({ post, onDelete, autoOpenComments = false }: Props) {
   const navigate = useNavigate();
 
   // Check if post is a repost
@@ -102,8 +116,10 @@ function PostCard({ post, onDelete }: Props) {
   } | null>(null);
 
   // Like state
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
+  const [liked, setLiked] = useState(Boolean(post.isLiked));
+  const [likeCount, setLikeCount] = useState<number>(post.likesCount ?? 0);
+  const likesHidden = Boolean(post.likesHidden);
+  const [likeBurst, setLikeBurst] = useState(false);
   const [loadingLike, setLoadingLike] = useState(false);
 
   // Save / Bookmark state
@@ -113,15 +129,14 @@ function PostCard({ post, onDelete }: Props) {
   const [isReposting, setIsReposting] = useState(false);
   const [isReposted, setIsReposted] = useState(false);
 
-  // Share popover state
-  const [showShareMenu, setShowShareMenu] = useState(false);
-  const shareBtnRef = useRef<HTMLButtonElement>(null);
 
   // Comments state
   const [comments, setComments] = useState<Comment[]>([]);
+  const [commentRestriction, setCommentRestriction] = useState<string | null>(null);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
-  const [showCommentsModal, setShowCommentsModal] = useState(false);
+  const [showCommentsModal, setShowCommentsModal] = useState(autoOpenComments);
   const [modalCommentText, setModalCommentText] = useState("");
   const [submittingModalComment, setSubmittingModalComment] = useState(false);
 
@@ -158,57 +173,18 @@ function PostCard({ post, onDelete }: Props) {
     }, 2400);
   };
 
-  const getUserIdFromToken = (): number | null => {
-    const token = localStorage.getItem("accessToken");
-    if (!token) return null;
-    try {
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      return payload.sub;
-    } catch {
-      return null;
-    }
-  };
 
-  // Check saved state from localStorage (matching mobile app logic)
-  const checkIfSaved = (postId: number): boolean => {
+  // Saved posts are stored on the server so they sync across devices.
+  const toggleSave = async () => {
+    const next = !isSaved;
+    setIsSaved(next);
     try {
-      const raw = localStorage.getItem("savedPosts");
-      if (!raw) return false;
-      const list = JSON.parse(raw);
-      if (!Array.isArray(list)) return false;
-      return list.some((item: any) =>
-        item && typeof item === "object" ? Number(item.id) === postId : Number(item) === postId
-      );
-    } catch {
-      return false;
-    }
-  };
-
-  const toggleSave = () => {
-    try {
-      const raw = localStorage.getItem("savedPosts");
-      const list: any[] = raw ? JSON.parse(raw) : [];
-      const alreadySaved = list.some((item: any) =>
-        item && typeof item === "object" ? Number(item.id) === post.id : Number(item) === post.id
-      );
-
-      let updated: any[];
-      if (alreadySaved) {
-        updated = list.filter((item: any) =>
-          item && typeof item === "object" ? Number(item.id) !== post.id : Number(item) !== post.id
-        );
-        setIsSaved(false);
-        showToast("Post removed from saved");
-      } else {
-        // Save post object
-        updated = [post, ...list];
-        setIsSaved(true);
-        showToast("Post saved to bookmarks");
-      }
-      localStorage.setItem("savedPosts", JSON.stringify(updated));
-    } catch (e) {
-      console.error("Save post error:", e);
-      showToast("Could not update bookmark");
+      if (next) await api.post(`/posts/${post.id}/save`);
+      else await api.delete(`/posts/${post.id}/save`);
+      showToast(next ? "Saved to your collection" : "Removed from saved");
+    } catch (error: any) {
+      setIsSaved(!next);
+      showToast(error.response?.data?.message || "Could not update saved posts");
     }
   };
 
@@ -246,7 +222,7 @@ function PostCard({ post, onDelete }: Props) {
   const loadLikes = async () => {
     try {
       const response = await api.get(`/likes/${post.id}`);
-      setLikeCount(response.data.likeCount);
+      setLikeCount(response.data.likeCount ?? 0);
 
       const userId = getUserIdFromToken();
       if (userId && response.data.likes) {
@@ -262,6 +238,10 @@ function PostCard({ post, onDelete }: Props) {
 
   const toggleLike = async () => {
     if (loadingLike) return;
+    if (!liked) {
+      setLikeBurst(true);
+      window.setTimeout(() => setLikeBurst(false), 650);
+    }
     try {
       setLoadingLike(true);
       if (liked) {
@@ -287,6 +267,11 @@ function PostCard({ post, onDelete }: Props) {
     try {
       const response = await api.get(`/comments/${post.id}`);
       setComments(response.data.comments || []);
+      setCommentRestriction(
+        response.data.canComment === false
+          ? response.data.commentRestriction || "Comments are limited on this post"
+          : null
+      );
     } catch (error) {
       console.error(error);
     }
@@ -377,6 +362,7 @@ function PostCard({ post, onDelete }: Props) {
       setIsDeletingPost(true);
       await api.delete(`/posts/${post.id}`);
       setShowDeletePostConfirm(false);
+      showGlobalToast("Post deleted");
       showToast("Post deleted");
       if (onDelete) {
         onDelete();
@@ -404,15 +390,62 @@ function PostCard({ post, onDelete }: Props) {
         onDelete();
       }
     } catch (error: any) {
-      alert(error.response?.data?.message || "Failed to update post");
+      showToast(error.response?.data?.message || "Failed to update post");
     } finally {
       setSaving(false);
     }
   };
 
+  // Double-click / double-tap the media to like (never un-likes).
+  const handleMediaDoubleClick = () => {
+    if (!liked) void toggleLike();
+    else {
+      setLikeBurst(true);
+      window.setTimeout(() => setLikeBurst(false), 650);
+    }
+  };
+
+  const postLinkId = post.originalPostId || post.id;
+
+  const copyPostLink = async () => {
+    setShowMenu(false);
+    const url = `${window.location.origin}/post/${postLinkId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast("Link copied to clipboard");
+    } catch {
+      window.prompt("Copy this link:", url);
+    }
+  };
+
+  const menuTarget = isRepost && reposter?.id ? reposter : post.author;
+  const menuTargetId = Number(menuTarget?.id ?? post.authorId);
+
+  const handleMuteAuthor = async () => {
+    setShowMenu(false);
+    if (!menuTargetId) return;
+    try {
+      await muteUser(menuTargetId);
+      showGlobalToast(`Muted @${menuTarget?.username || "user"}. Undo in Settings → Safety.`);
+      onDelete?.();
+    } catch (error: any) {
+      showToast(error.response?.data?.message || "Couldn't mute");
+    }
+  };
+
+  const handleBlockAuthor = async () => {
+    try {
+      await blockUser(menuTargetId);
+      setShowBlockConfirm(false);
+      showGlobalToast(`Blocked @${menuTarget?.username || "user"}`);
+      onDelete?.();
+    } catch (error: any) {
+      showToast(error.response?.data?.message || "Couldn't block");
+    }
+  };
+
   // Direct Message & Share with Post Attachment
   const handleOpenMessages = () => {
-    setShowShareMenu(false);
     const sharePayload = {
       id: post.originalPostId || post.id,
       title: displayTitle,
@@ -433,93 +466,120 @@ function PostCard({ post, onDelete }: Props) {
     navigate(`/messages/${post.authorId}`, { state: { sharePost: sharePayload } });
   };
 
-  const handleCopyLink = () => {
-    setShowShareMenu(false);
-    const link = `${window.location.origin}/#post-${post.id}`;
-    navigator.clipboard.writeText(link);
-    showToast("Link copied to clipboard!");
-  };
-
-  const handleNativeShare = async () => {
-    setShowShareMenu(false);
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: post.title,
-          text: post.content || post.title,
-          url: window.location.href,
-        });
-      } catch {
-        // User cancelled share
-      }
-    } else {
-      handleCopyLink();
-    }
-  };
-
   useEffect(() => {
     const uid = getUserIdFromToken();
     setCurrentUserId(uid);
-    setIsSaved(checkIfSaved(post.id));
-    loadLikes();
+    setIsSaved(Boolean(post.isSaved));
+    setLiked(Boolean(post.isLiked));
+    setLikeCount(post.likesCount ?? 0);
+    // Feed responses already carry like info; only older payloads need a fetch.
+    if (post.likesCount === undefined) loadLikes();
     loadComments();
 
-    // Fetch me for current user avatar
-    api
-      .get("/users/me")
-      .then((res) => {
-        if (res.data) {
-          setCurrentUserProfile(res.data);
-        }
-      })
-      .catch(() => {});
+    // Shared, cached /users/me — one request per page instead of one per card.
+    let alive = true;
+    void getCurrentUser().then((me) => {
+      if (alive && me) setCurrentUserProfile(me);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id]);
 
+  // Who owns this card: the reposter for a repost, the author otherwise.
+  const ownerId = Number(
+    post.ownerId ?? (isRepost && reposter?.id ? reposter.id : post.authorId)
+  );
+  const isOwner = currentUserId !== null && currentUserId === ownerId;
+
+  // Comments containing the viewer's hidden words are filtered out.
+  const hiddenWords = getHiddenWords();
+  const visibleComments = comments.filter((c) => !containsHiddenWord(c.content, hiddenWords));
+
   // Preview comments: up to 2 comments shown under post
-  const previewComments = comments.slice(0, 2);
+  const previewComments = visibleComments.slice(0, 2);
 
   return (
     <article className="post-card" id={`post-${post.id}`}>
       {/* Toast Feedback */}
-      {toastMessage && <div className="post-toast">{toastMessage}</div>}
+      {toastMessage && createPortal(<div className="post-toast">{toastMessage}</div>, document.body)}
 
-      {/* 3-dots Menu for Post Author */}
-      {currentUserId === Number(post.authorId) && (
-        <div className="post-menu">
-          <button
-            className="post-menu-button"
-            title="Post options"
-            onClick={() => setShowMenu((v) => !v)}
-          >
-            ⋯
-          </button>
-          {showMenu && (
-            <div className="post-menu-dropdown">
-              <button
-                onClick={() => {
-                  setEditTitle(post.title);
-                  setEditContent(post.content || "");
-                  setEditBackground(post.backgroundColor || "#F3F4F6");
-                  setEditFontSize(post.fontSize || 22);
-                  setShowEdit(true);
-                  setShowMenu(false);
-                }}
-              >
-                ✏️ Edit Post
+      {/* 3-dots Menu */}
+      <div className="post-menu">
+        <button
+          className="post-menu-button"
+          title="Post options"
+          aria-haspopup="menu"
+          aria-expanded={showMenu}
+          onClick={() => setShowMenu((v) => !v)}
+        >
+          ⋯
+        </button>
+        {showMenu && (
+          <>
+            <div className="sc-menu-backdrop" onClick={() => setShowMenu(false)} />
+            <div className="post-menu-dropdown" role="menu">
+              {isOwner && !isRepost && (
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setEditTitle(displayTitle);
+                    setEditContent(displayContent);
+                    setEditBackground(post.backgroundColor || "#F3F4F6");
+                    setEditFontSize(post.fontSize || 22);
+                    setShowEdit(true);
+                    setShowMenu(false);
+                  }}
+                >
+                  ✏️ Edit post
+                </button>
+              )}
+              <button role="menuitem" onClick={copyPostLink}>
+                🔗 Copy link
               </button>
               <button
-                className="delete-action"
+                role="menuitem"
                 onClick={() => {
                   setShowMenu(false);
-                  setShowDeletePostConfirm(true);
+                  navigate(`/post/${postLinkId}`);
                 }}
               >
-                🗑️ Delete Post
+                ↗️ Open post
               </button>
+              {!isOwner && (
+                <button role="menuitem" onClick={() => void handleMuteAuthor()}>
+                  🔇 Mute @{menuTarget?.username || "user"}
+                </button>
+              )}
+              {!isOwner && (
+                <button
+                  role="menuitem"
+                  className="delete-action"
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowBlockConfirm(true);
+                  }}
+                >
+                  ⛔ Block @{menuTarget?.username || "user"}
+                </button>
+              )}
+              {isOwner && (
+                <button
+                  role="menuitem"
+                  className="delete-action"
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowDeletePostConfirm(true);
+                  }}
+                >
+                  🗑️ {isRepost ? "Undo repost" : "Delete post"}
+                </button>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
 
       {/* ── Modern Repost Header (Twitter/Threads style) ── */}
       {isRepost && reposter && (
@@ -602,20 +662,29 @@ function PostCard({ post, onDelete }: Props) {
       </div>
 
       {/* Post Body: Image or Text Post */}
+      <div className="post-media-wrap" onDoubleClick={handleMediaDoubleClick}>
+      {likeBurst && (
+        <div className="sc-like-burst" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="96" height="96" fill="#fff">
+            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+          </svg>
+        </div>
+      )}
       {!post.imageUrl ? (
         <div
           className="text-post-content"
           style={{
             backgroundColor: post.backgroundColor || "#F3F4F6",
-            color: (post.backgroundColor || "") === "#111827" ? "#fff" : "#111827",
+            color: readableTextColor(post.backgroundColor || "#F3F4F6"),
             fontSize: post.fontSize || 22,
           }}
         >
           {displayTitle}
         </div>
       ) : (
-        <img src={post.imageUrl} alt={displayTitle} className="post-image" />
+        <img src={post.imageUrl} alt={displayTitle} className="post-image" loading="lazy" />
       )}
+      </div>
 
       {/* Post Actions & Content */}
       <div className="post-content">
@@ -710,12 +779,16 @@ function PostCard({ post, onDelete }: Props) {
           </button>
         </div>
 
-        {/* Likes Count */}
-        {likeCount > 0 && (
+        {/* Likes Count (authors can hide it from others) */}
+        {likesHidden ? (
+          <div className="post-likes-count sc-likes-hidden">
+            {liked ? "Liked by you" : "Likes are hidden"}
+          </div>
+        ) : likeCount > 0 ? (
           <div className="post-likes-count">
             {likeCount} {likeCount === 1 ? "like" : "likes"}
           </div>
-        )}
+        ) : null}
 
         {/* Caption */}
         <div className="post-caption">
@@ -725,8 +798,12 @@ function PostCard({ post, onDelete }: Props) {
           >
             {post.author?.username || "user"}
           </span>
-          <span>{displayTitle}</span>
-          {displayContent && <p className="post-body-text">{displayContent}</p>}
+          <RichText text={displayTitle} />
+          {displayContent && (
+            <p className="post-body-text">
+              <RichText text={displayContent} />
+            </p>
+          )}
         </div>
 
         {/* ── Comments Preview (1 or 2 comments under post) ── */}
@@ -740,7 +817,9 @@ function PostCard({ post, onDelete }: Props) {
                 >
                   {c.username || c.name || "user"}
                 </span>
-                <span className="preview-comment-content">{c.content}</span>
+                <span className="preview-comment-content">
+                  <RichText text={c.content} />
+                </span>
                 {c.createdAt && (
                   <span className="preview-comment-time">
                     {formatTimeAgo(c.createdAt)}
@@ -752,16 +831,19 @@ function PostCard({ post, onDelete }: Props) {
         )}
 
         {/* ── "View all X comments" button (opens full comment section) ── */}
-        {comments.length > 2 && (
+        {visibleComments.length > 2 && (
           <button
             className="view-all-comments-btn"
             onClick={() => setShowCommentsModal(true)}
           >
-            View all {comments.length} comments
+            View all {visibleComments.length} comments
           </button>
         )}
 
         {/* ── Quick Inline Comment Input on Card ── */}
+        {commentRestriction ? (
+          <div className="sc-comment-restricted">🔒 {commentRestriction}</div>
+        ) : (
         <form
           className="inline-comment-box"
           onSubmit={(e) => {
@@ -795,10 +877,11 @@ function PostCard({ post, onDelete }: Props) {
             </button>
           )}
         </form>
+        )}
       </div>
 
       {/* ── Comments Modal / Full Comments Section ── */}
-      {showCommentsModal && (
+      {showCommentsModal && createPortal(
         <div
           className="comments-modal-overlay"
           onClick={() => setShowCommentsModal(false)}
@@ -808,7 +891,7 @@ function PostCard({ post, onDelete }: Props) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="comments-modal-header">
-              <h3>Comments ({comments.length})</h3>
+              <h3>Comments ({visibleComments.length})</h3>
               <button
                 className="comments-modal-close"
                 onClick={() => setShowCommentsModal(false)}
@@ -818,15 +901,16 @@ function PostCard({ post, onDelete }: Props) {
             </div>
 
             <div className="comments-modal-list">
-              {comments.length === 0 ? (
+              {visibleComments.length === 0 ? (
                 <div className="comments-empty-state">
                   <div style={{ fontSize: "28px" }}>💬</div>
                   <strong>No comments yet</strong>
                   <p>Be the first to share your thoughts!</p>
                 </div>
               ) : (
-                comments.map((item) => {
+                visibleComments.map((item) => {
                   const isMyComment = currentUserId === item.userId;
+                  const canModerate = isMyComment || isOwner;
                   const isEditing = editingCommentId === item.id;
 
                   return (
@@ -898,12 +982,14 @@ function PostCard({ post, onDelete }: Props) {
                             </div>
                           </div>
                         ) : (
-                          <div className="modal-comment-text">{item.content}</div>
+                          <div className="modal-comment-text">
+                            <RichText text={item.content} />
+                          </div>
                         )}
                       </div>
 
                       {/* Only allow editing / deleting own comment with sleek action menu */}
-                      {isMyComment && !isEditing && (
+                      {canModerate && !isEditing && (
                         <div className="comment-actions-menu-container">
                           <button
                             type="button"
@@ -924,13 +1010,15 @@ function PostCard({ post, onDelete }: Props) {
                               className="comment-action-dropdown"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <button
-                                type="button"
-                                className="comment-dropdown-item"
-                                onClick={() => startEditComment(item)}
-                              >
-                                <span>✏️</span> Edit
-                              </button>
+                              {isMyComment && (
+                                <button
+                                  type="button"
+                                  className="comment-dropdown-item"
+                                  onClick={() => startEditComment(item)}
+                                >
+                                  <span>✏️</span> Edit
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 className="comment-dropdown-item delete"
@@ -951,6 +1039,9 @@ function PostCard({ post, onDelete }: Props) {
               )}
             </div>
 
+            {commentRestriction ? (
+              <div className="sc-comment-restricted sc-in-modal">🔒 {commentRestriction}</div>
+            ) : (
             <form
               className="comments-modal-footer"
               onSubmit={(e) => {
@@ -971,12 +1062,14 @@ function PostCard({ post, onDelete }: Props) {
                 {submittingModalComment ? "Posting..." : "Post"}
               </button>
             </form>
+            )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Edit Post Modal ── */}
-      {showEdit && (
+      {showEdit && createPortal(
         <div
           className="edit-overlay"
           onClick={() => !saving && setShowEdit(false)}
@@ -1050,9 +1143,19 @@ function PostCard({ post, onDelete }: Props) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       {/* Delete Post Modal */}
+      <ConfirmModal
+        isOpen={showBlockConfirm}
+        title={`Block @${menuTarget?.username || "user"}?`}
+        message="They won't be able to find your profile, see your posts or message you. They won't be notified."
+        confirmText="Block"
+        onConfirm={() => void handleBlockAuthor()}
+        onCancel={() => setShowBlockConfirm(false)}
+      />
+
       <ConfirmModal
         isOpen={showDeletePostConfirm}
         title="Delete Post"

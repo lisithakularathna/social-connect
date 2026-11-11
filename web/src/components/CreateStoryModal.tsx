@@ -1,5 +1,23 @@
 import { useRef, useState, type ChangeEvent } from "react";
+import { createPortal } from "react-dom";
 import "./StoriesBar.css";
+import { showGlobalToast } from "../utils/toast";
+
+export interface StoryViewer {
+  userId: number;
+  username: string;
+  name?: string;
+  userAvatar?: string;
+  viewedAt: string;
+}
+
+export interface StoryReaction {
+  userId: number;
+  username: string;
+  userAvatar?: string;
+  emoji: string;
+  createdAt: string;
+}
 
 export interface StoryItem {
   id: string;
@@ -11,6 +29,8 @@ export interface StoryItem {
   text?: string;
   background?: string;
   createdAt: string;
+  viewers?: StoryViewer[];
+  reactions?: StoryReaction[];
 }
 
 interface CreateStoryModalProps {
@@ -54,7 +74,7 @@ export default function CreateStoryModal({
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 10 * 1024 * 1024) {
-        alert("Image must be smaller than 10MB");
+        showGlobalToast("Image must be smaller than 10MB");
         return;
       }
       const reader = new FileReader();
@@ -77,6 +97,8 @@ export default function CreateStoryModal({
       userAvatar: currentUser.profileImageUrl,
       type: mode,
       createdAt: now,
+      viewers: [],
+      reactions: [],
       ...(mode === "image"
         ? { mediaUrl: imagePreview || "", text: caption.trim() }
         : { text: textContent.trim(), background: selectedGradient }),
@@ -100,7 +122,7 @@ export default function CreateStoryModal({
       ? Boolean(imagePreview)
       : Boolean(textContent.trim().length > 0);
 
-  return (
+  return createPortal(
     <div className="story-modal-overlay" onClick={resetAndClose}>
       <div
         className="story-modal-card"
@@ -245,6 +267,7 @@ export default function CreateStoryModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

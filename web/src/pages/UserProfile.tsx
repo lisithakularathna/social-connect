@@ -1,18 +1,47 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
+import { Navigate, useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
 import PostCard from "../components/PostCard";
 import api from "../api/api";
+import { getUserIdFromToken } from "../utils/session";
+import { blockUser, muteUser, unblockUser, unmuteUser } from "../utils/prefs";
+import ConfirmModal from "../components/ConfirmModal";
+import { getErrorMessage } from "../api/api";
+import { showGlobalToast } from "../utils/toast";
+import { readableTextColor } from "../utils/color";
 import "./UserProfile.css";
 
 interface User {
   id: number;
-  email: string;
   username?: string;
   name?: string;
   bio?: string;
   profileImageUrl?: string;
+  createdAt?: string;
+  postsCount?: number;
+  isPrivate?: boolean;
+  isFollowing?: boolean;
+  isRequested?: boolean;
+  followsYou?: boolean;
+  isBlocked?: boolean;
+  isMuted?: boolean;
+  canViewContent?: boolean;
+  canMessage?: boolean;
+  isOnline?: boolean;
+  lastActiveAt?: string | null;
+}
+
+function presenceLabel(user: User) {
+  if (user.isOnline) return "Active now";
+  if (!user.lastActiveAt) return null;
+  const mins = Math.floor((Date.now() - new Date(user.lastActiveAt).getTime()) / 60000);
+  if (mins < 60) return `Active ${Math.max(mins, 1)}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Active ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days <= 7 ? `Active ${days}d ago` : null;
 }
 
 interface Post {
@@ -56,12 +85,18 @@ function UserProfile() {
     followingCount: 0,
   });
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isRequested, setIsRequested] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [blocked, setBlocked] = useState(false);
 
   const navigate = useNavigate();
+  const myId = getUserIdFromToken();
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -78,31 +113,26 @@ function UserProfile() {
   const loadUserProfile = async () => {
     if (!userId) return;
 
+    setLoading(true);
+    setUser(null);
     try {
-      const [userRes, postsRes, statsRes, meRes] = await Promise.all([
+      const [userRes, postsRes] = await Promise.all([
         api.get(`/users/${userId}`),
         api.get(`/posts/user/${userId}`),
-        api.get(`/follows/stats/${userId}`),
-        api.get("/users/me"),
       ]);
 
-      setUser(userRes.data);
+      const profile: User = userRes.data;
+      setUser(profile);
       setPosts(Array.isArray(postsRes.data) ? postsRes.data : []);
-      setFollowStats(statsRes.data || {
-        followersCount: 0,
-        followingCount: 0,
+      setFollowStats({
+        followersCount: userRes.data?.followersCount ?? 0,
+        followingCount: userRes.data?.followingCount ?? 0,
       });
-
-      try {
-        const followCheckRes = await api.get(`/follows/check/${userId}`);
-        setIsFollowing(Boolean(followCheckRes.data?.isFollowing));
-      } catch {
-        setIsFollowing(false);
-      }
-
-      if (meRes.data?.id) {
-        setCurrentUserId(Number(meRes.data.id));
-      }
+      setIsFollowing(Boolean(profile.isFollowing));
+      setIsRequested(Boolean(profile.isRequested));
+      setMuted(Boolean(profile.isMuted));
+      setBlocked(Boolean(profile.isBlocked));
+      setCurrentUserId(myId);
     } catch (error) {
       console.error(error);
     } finally {
@@ -115,24 +145,35 @@ function UserProfile() {
     setFollowLoading(true);
 
     try {
-      if (isFollowing) {
+      if (isFollowing || isRequested) {
+        const wasFollowing = isFollowing;
         setIsFollowing(false);
-        setFollowStats(prev => ({
-          ...prev,
-          followersCount: Math.max(0, prev.followersCount - 1),
-        }));
+        setIsRequested(false);
+        if (wasFollowing) {
+          setFollowStats((prev) => ({
+            ...prev,
+            followersCount: Math.max(0, prev.followersCount - 1),
+          }));
+        }
         await api.delete(`/follows/${userId}`);
+        // Unfollowing a private account hides its posts again.
+        if (wasFollowing && user?.isPrivate) void loadUserProfile();
       } else {
-        setIsFollowing(true);
-        setFollowStats(prev => ({
-          ...prev,
-          followersCount: prev.followersCount + 1,
-        }));
-        await api.post(`/follows/${userId}`);
+        const { data } = await api.post(`/follows/${userId}`);
+        if (data?.requested) {
+          setIsRequested(true);
+          showGlobalToast("Follow request sent");
+        } else {
+          setIsFollowing(true);
+          setFollowStats((prev) => ({
+            ...prev,
+            followersCount: prev.followersCount + 1,
+          }));
+        }
       }
     } catch (error) {
-      console.error(error);
-      loadUserProfile();
+      showGlobalToast(getErrorMessage(error, "Couldn't update follow"));
+      void loadUserProfile();
     } finally {
       setFollowLoading(false);
     }
@@ -140,7 +181,49 @@ function UserProfile() {
 
   useEffect(() => {
     loadUserProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  const toggleMute = async () => {
+    if (!user) return;
+    setShowMoreMenu(false);
+    try {
+      if (muted) {
+        await unmuteUser(user.id);
+        setMuted(false);
+        showGlobalToast(`Unmuted @${user.username || "user"}`);
+      } else {
+        await muteUser(user.id);
+        setMuted(true);
+        showGlobalToast(`Muted @${user.username || "user"} — their posts are hidden from your feed`);
+      }
+    } catch (error) {
+      showGlobalToast(getErrorMessage(error, "Couldn't update mute"));
+    }
+  };
+
+  const toggleBlock = async () => {
+    if (!user) return;
+    setShowMoreMenu(false);
+    try {
+      if (blocked) {
+        await unblockUser(user.id);
+        showGlobalToast(`Unblocked @${user.username || "user"}`);
+      } else {
+        await blockUser(user.id);
+        setShowBlockConfirm(false);
+        showGlobalToast(`Blocked @${user.username || "user"}`);
+      }
+      void loadUserProfile();
+    } catch (error) {
+      showGlobalToast(getErrorMessage(error, "Couldn't update block"));
+    }
+  };
+
+  // Visiting your own id should show your editable profile.
+  if (userId && myId !== null && Number(userId) === myId) {
+    return <Navigate to="/profile" replace />;
+  }
 
   if (loading) {
     return (
@@ -218,19 +301,42 @@ function UserProfile() {
               <div className="user-identity">
                 <h1 className="user-main-username">
                   {user.username || "user"}
+                  {user.isPrivate && (
+                    <span className="sc-lock" title="Private account" aria-label="Private account">
+                      🔒
+                    </span>
+                  )}
                 </h1>
                 {user.name && <p className="user-full-name">{user.name}</p>}
+                <div className="sc-profile-meta">
+                  {presenceLabel(user) && (
+                    <span className={`sc-presence ${user.isOnline ? "online" : ""}`}>
+                      <span className="sc-presence-dot" />
+                      {presenceLabel(user)}
+                    </span>
+                  )}
+                  {user.followsYou && <span className="sc-follows-you">Follows you</span>}
+                </div>
               </div>
 
               {/* Action Buttons: Follow, Message, Share */}
               <div className="user-actions-row">
+                {!blocked && (
                 <button
                   type="button"
                   onClick={toggleFollow}
                   disabled={followLoading}
-                  className={`user-btn-follow ${isFollowing ? "following" : ""}`}
+                  className={`user-btn-follow ${isFollowing || isRequested ? "following" : ""}`}
                 >
-                  {isFollowing ? (
+                  {isRequested ? (
+                    <>
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <circle cx="12" cy="12" r="9" />
+                        <polyline points="12 7 12 12 15 14" />
+                      </svg>
+                      <span>Requested</span>
+                    </>
+                  ) : isFollowing ? (
                     <>
                       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5">
                         <polyline points="20 6 9 17 4 12" />
@@ -245,12 +351,13 @@ function UserProfile() {
                         <line x1="20" y1="8" x2="20" y2="14" />
                         <line x1="23" y1="11" x2="17" y2="11" />
                       </svg>
-                      <span>Follow</span>
+                      <span>{user.followsYou ? "Follow back" : "Follow"}</span>
                     </>
                   )}
                 </button>
+                )}
 
-                {currentUserId !== null && currentUserId !== Number(user.id) && (
+                {currentUserId !== null && currentUserId !== Number(user.id) && !blocked && user.canMessage !== false && (
                   <button
                     type="button"
                     onClick={() => navigate(`/messages/${userId}`)}
@@ -273,6 +380,48 @@ function UserProfile() {
                   </button>
                 )}
 
+                <div className="sc-more-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setShowMoreMenu((v) => !v)}
+                    className="user-btn-icon"
+                    title="More options"
+                    aria-haspopup="menu"
+                    aria-expanded={showMoreMenu}
+                  >
+                    <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor">
+                      <circle cx="5" cy="12" r="2" />
+                      <circle cx="12" cy="12" r="2" />
+                      <circle cx="19" cy="12" r="2" />
+                    </svg>
+                  </button>
+                  {showMoreMenu && (
+                    <>
+                      <div className="sc-menu-backdrop" onClick={() => setShowMoreMenu(false)} />
+                      <div className="sc-dropdown" role="menu">
+                        {!blocked && (
+                          <button role="menuitem" onClick={() => void toggleMute()}>
+                            {muted ? "🔊 Unmute" : "🔇 Mute"} @{user.username || "user"}
+                          </button>
+                        )}
+                        <button
+                          role="menuitem"
+                          className="danger"
+                          onClick={() => {
+                            if (blocked) void toggleBlock();
+                            else {
+                              setShowMoreMenu(false);
+                              setShowBlockConfirm(true);
+                            }
+                          }}
+                        >
+                          {blocked ? "✅ Unblock" : "⛔ Block"} @{user.username || "user"}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <button
                   type="button"
                   onClick={handleShareProfile}
@@ -293,14 +442,22 @@ function UserProfile() {
             {/* Stats row */}
             <div className="user-stats-bar">
               <div className="user-stat-card">
-                <span className="user-stat-number">{ownPosts.length}</span>
+                <span className="user-stat-number">
+                  {user.canViewContent === false ? user.postsCount ?? 0 : ownPosts.length}
+                </span>
                 <span className="user-stat-label">Posts</span>
               </div>
-              <div className="user-stat-card">
+              <div
+                className="user-stat-card sc-clickable"
+                onClick={() => user.canViewContent !== false && navigate(`/user/${user.id}/followers`)}
+              >
                 <span className="user-stat-number">{followStats.followersCount}</span>
                 <span className="user-stat-label">Followers</span>
               </div>
-              <div className="user-stat-card">
+              <div
+                className="user-stat-card sc-clickable"
+                onClick={() => user.canViewContent !== false && navigate(`/user/${user.id}/following`)}
+              >
                 <span className="user-stat-number">{followStats.followingCount}</span>
                 <span className="user-stat-label">Following</span>
               </div>
@@ -350,7 +507,23 @@ function UserProfile() {
 
         {/* ── User Posts Grid ── */}
         <section className="user-posts-section">
-          {displayedPosts.length === 0 ? (
+          {blocked ? (
+            <div className="user-posts-empty">
+              <div className="user-posts-empty-icon">⛔</div>
+              <h3>You blocked this account</h3>
+              <p>Unblock @{user.username || "user"} from the ⋯ menu to see their posts.</p>
+            </div>
+          ) : user.canViewContent === false ? (
+            <div className="user-posts-empty sc-private-notice">
+              <div className="user-posts-empty-icon">🔒</div>
+              <h3>This account is private</h3>
+              <p>
+                {isRequested
+                  ? "Your follow request is pending. You'll see their posts once they accept."
+                  : `Follow @${user.username || "user"} to see their photos and posts.`}
+              </p>
+            </div>
+          ) : displayedPosts.length === 0 ? (
             <div className="user-posts-empty">
               <div className="user-posts-empty-icon">{activeTab === "posts" ? "📷" : "🔁"}</div>
               <h3>{activeTab === "posts" ? "No posts yet" : "No reposts yet"}</h3>
@@ -376,7 +549,7 @@ function UserProfile() {
                       className="user-grid-color-post"
                       style={{
                         backgroundColor: post.backgroundColor || "#6366f1",
-                        color: "#ffffff",
+                        color: readableTextColor(post.backgroundColor || "#6366f1"),
                         fontSize: `${Math.min(Math.max((post.fontSize || 20) * 0.75, 13), 20)}px`,
                       }}
                     >
@@ -398,7 +571,7 @@ function UserProfile() {
         </section>
 
         {/* Post Detail Modal */}
-        {selectedPost && (
+        {selectedPost && createPortal(
           <div
             className="post-modal-overlay"
             onClick={() => setSelectedPost(null)}
@@ -422,14 +595,25 @@ function UserProfile() {
                 }}
               />
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
+        <ConfirmModal
+          isOpen={showBlockConfirm}
+          title={`Block @${user.username || "user"}?`}
+          message="They won't be able to find your profile, see your posts or message you. They won't be notified that you blocked them."
+          confirmText="Block"
+          onConfirm={() => void toggleBlock()}
+          onCancel={() => setShowBlockConfirm(false)}
+        />
+
         {/* Toast notification */}
-        {toastMsg && (
+        {toastMsg && createPortal(
           <div className="user-profile-toast">
             {toastMsg}
-          </div>
+          </div>,
+          document.body
         )}
       </main>
 

@@ -5,6 +5,8 @@ import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
 import ConfirmModal from "../components/ConfirmModal";
 import api from "../api/api";
+import { showGlobalToast } from "../utils/toast";
+import { clearUnread, refreshUnreadCounts } from "../utils/unread";
 import {
   initUserE2EE,
   getConversationCryptoKey,
@@ -27,18 +29,39 @@ interface Message {
   senderId: number;
   receiverId: number;
   createdAt: string;
+  readAt?: string | null;
   isEdited?: boolean;
   isEncrypted?: boolean;
 }
 
 interface ConversationItem {
-  user: User;
+  user: User & { isOnline?: boolean; lastActiveAt?: string | null };
+  unreadCount?: number;
   lastMessage?: {
     id: number;
     content: string;
     senderId: number;
     createdAt: string;
   };
+}
+
+type ChatUser = User & {
+  isOnline?: boolean;
+  lastActiveAt?: string | null;
+  canMessage?: boolean;
+  isBlocked?: boolean;
+};
+
+function presenceText(user: ChatUser | null) {
+  if (!user) return "";
+  if (user.isOnline) return "Active now";
+  if (!user.lastActiveAt) return "";
+  const mins = Math.floor((Date.now() - new Date(user.lastActiveAt).getTime()) / 60000);
+  if (mins < 60) return `Active ${Math.max(mins, 1)}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Active ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days <= 7 ? `Active ${days}d ago` : "";
 }
 
 function formatRelativeTime(dateString?: string): string {
@@ -90,6 +113,10 @@ function formatDateDivider(dateString: string): string {
 
 function cleanSidebarPreview(txt?: string): string {
   if (!txt) return "";
+  const storyMatch = txt.match(/^\[STORY_REPLY:(.+?)\]\s*(.*)$/s);
+  if (storyMatch) {
+    return storyMatch[2] ? `⭕ Story: ${storyMatch[2]}` : "⭕ Replied to story";
+  }
   const match = txt.match(/^\[POST_SHARE:(.+?)\]\s*(.*)$/s);
   if (match) {
     return match[2] ? `📷 ${match[2]}` : "📷 Shared a post";
@@ -99,6 +126,20 @@ function cleanSidebarPreview(txt?: string): string {
 
 function cleanPinnedSnippet(txt?: string): string {
   if (!txt) return "Pinned message";
+  const storyMatch = txt.match(/^\[STORY_REPLY:(.+?)\]\s*([\s\S]*)$/);
+  if (storyMatch) {
+    try {
+      const data = JSON.parse(storyMatch[1]);
+      const userText = storyMatch[2]?.trim();
+      const author = data.authorUsername ? `@${data.authorUsername}` : "Story";
+      if (userText) {
+        return `⭕ Story reply to ${author}: ${userText}`;
+      }
+      return `⭕ Story reply to ${author}`;
+    } catch {
+      return "⭕ Story reply";
+    }
+  }
   const shareMatch = txt.match(/^\[POST_SHARE:(.+?)\]\s*([\s\S]*)$/);
   if (shareMatch) {
     try {
@@ -133,7 +174,7 @@ function Messages() {
   const [pinnedUserIds, setPinnedUserIds] = useState<number[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<ChatUser | null>(null);
   const [message, setMessage] = useState("");
   const [currentUserId, setCurrentUserId] = useState<number | null>(null);
   const [loadingSidebar, setLoadingSidebar] = useState(true);
@@ -278,6 +319,7 @@ function Messages() {
               }
               return {
                 user: item.user,
+                unreadCount: item.unreadCount ?? 0,
                 lastMessage: item.lastMessage
                   ? { ...item.lastMessage, content: previewContent }
                   : undefined,
@@ -427,6 +469,12 @@ function Messages() {
 
       setMessages(decryptedList);
 
+      // Opening the chat marked it read on the server.
+      setConversations((prev) =>
+        prev.map((c) => (c.user.id === id && c.unreadCount ? { ...c, unreadCount: 0 } : c))
+      );
+      if (isInitial) void refreshUnreadCounts();
+
       if (isInitial) {
         setTimeout(() => {
           chatBottomRef.current?.scrollIntoView({ behavior: "auto" });
@@ -484,7 +532,7 @@ function Messages() {
           )
         );
       } catch (err: any) {
-        alert(err.response?.data?.message || "Failed to update message.");
+        showGlobalToast(err.response?.data?.message || "Failed to update message.");
       } finally {
         setSending(false);
       }
@@ -552,7 +600,7 @@ function Messages() {
 
       inputRef.current?.focus();
     } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to send message.");
+      showGlobalToast(err.response?.data?.message || "Failed to send message.");
     } finally {
       setSending(false);
     }
@@ -629,6 +677,16 @@ function Messages() {
     loadSidebar();
   }, []);
 
+  // Opening Messages counts as reading the "new message" notifications,
+  // which is what drives the unread badge in the Navbar.
+  useEffect(() => {
+    clearUnread("messages");
+    api
+      .patch("/notifications/read-all", null, { params: { type: "message" } })
+      .then(() => refreshUnreadCounts())
+      .catch(() => {});
+  }, [userId]);
+
   // When route userId changes
   useEffect(() => {
     cancelEditing();
@@ -701,6 +759,11 @@ function Messages() {
       const bPinned = pinnedUserIds.includes(b.user.id) ? 1 : 0;
       return bPinned - aPinned;
     });
+
+  const selfChatActive =
+    selectedUser !== null &&
+    currentUserId !== null &&
+    Number(selectedUser.id) === Number(currentUserId);
 
   return (
     <>
@@ -781,7 +844,7 @@ function Messages() {
                             isSelf ? "Y" : (item.user.username || item.user.name || "U")[0].toUpperCase()
                           )}
                         </div>
-                        {!isSelf && <div className="conv-online-dot" />}
+                        {!isSelf && item.user.isOnline && <div className="conv-online-dot" title="Active now" />}
                       </div>
 
                       <div className="conv-info">
@@ -805,9 +868,16 @@ function Messages() {
                             </span>
                           )}
                         </div>
-                        <p className="conv-last-msg">
-                          {cleanSidebarPreview(item.lastMessage?.content) || (isSelf ? "Notes to yourself" : "Tap to chat")}
-                        </p>
+                        <div className="sc-conv-preview-row">
+                          <p className={`conv-last-msg ${item.unreadCount ? "sc-unread-preview" : ""}`}>
+                            {cleanSidebarPreview(item.lastMessage?.content) || (isSelf ? "Notes to yourself" : "Tap to chat")}
+                          </p>
+                          {!isSelected && (item.unreadCount ?? 0) > 0 && (
+                            <span className="sc-conv-unread" aria-label={`${item.unreadCount} unread`}>
+                              {item.unreadCount! > 99 ? "99+" : item.unreadCount}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Quick Pin / Unpin Button on Hover */}
@@ -892,9 +962,13 @@ function Messages() {
                           >
                             {isSelfChat ? "You (Message yourself)" : (selectedUser.username || selectedUser.name || "User")}
                           </div>
-                          <div className="chat-header-status">
-                            <span className="status-dot" />
-                            <span>{isSelfChat ? "Notes & messages to yourself" : "Active now"}</span>
+                          <div className={`chat-header-status ${selectedUser.isOnline ? "" : "sc-offline"}`}>
+                            {(isSelfChat || selectedUser.isOnline) && <span className="status-dot" />}
+                            <span>
+                              {isSelfChat
+                                ? "Notes & messages to yourself"
+                                : presenceText(selectedUser) || `@${selectedUser.username || "user"}`}
+                            </span>
                           </div>
                         </div>
 
@@ -1050,15 +1124,27 @@ function Messages() {
                       const isThisPinned = pinnedMessage?.id === item.id;
                       const isHighlighted = highlightedMsgId === item.id;
 
+                      let storyReplyData: any = null;
                       let postShareData: any = null;
                       let displayMessageText = item.content;
-                      const shareMatch = item.content.match(/^\[POST_SHARE:(.+?)\]\s*([\s\S]*)$/);
-                      if (shareMatch) {
+
+                      const storyMatch = item.content.match(/^\[STORY_REPLY:(.+?)\]\s*([\s\S]*)$/);
+                      if (storyMatch) {
                         try {
-                          postShareData = JSON.parse(shareMatch[1]);
-                          displayMessageText = shareMatch[2] || "";
+                          storyReplyData = JSON.parse(storyMatch[1]);
+                          displayMessageText = storyMatch[2] || "";
                         } catch (err) {
-                          console.error("Failed to parse shared post payload:", err);
+                          console.error("Failed to parse story reply payload:", err);
+                        }
+                      } else {
+                        const shareMatch = item.content.match(/^\[POST_SHARE:(.+?)\]\s*([\s\S]*)$/);
+                        if (shareMatch) {
+                          try {
+                            postShareData = JSON.parse(shareMatch[1]);
+                            displayMessageText = shareMatch[2] || "";
+                          } catch (err) {
+                            console.error("Failed to parse shared post payload:", err);
+                          }
                         }
                       }
 
@@ -1186,10 +1272,53 @@ function Messages() {
                                 </div>
                               )}
 
+                              {/* Attached Story Reply Card inside Chat */}
+                              {storyReplyData && (
+                                <div className="chat-shared-story-card">
+                                  <div className="chat-shared-story-header">
+                                    <div className="chat-shared-story-tag">
+                                      <span className="story-ring-dot" />
+                                      <span>Story Reply</span>
+                                    </div>
+                                    {storyReplyData.authorUsername && (
+                                      <span className="chat-shared-story-author">
+                                        @{storyReplyData.authorUsername}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {storyReplyData.mediaUrl ? (
+                                    <div className="chat-shared-story-media-wrap">
+                                      <img
+                                        src={storyReplyData.mediaUrl}
+                                        alt="Story preview"
+                                        className="chat-shared-story-media"
+                                      />
+                                      {storyReplyData.text && (
+                                        <div className="chat-shared-story-caption">
+                                          {storyReplyData.text}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div
+                                      className="chat-shared-story-text-tile"
+                                      style={{
+                                        background:
+                                          storyReplyData.background ||
+                                          "linear-gradient(135deg, #667eea, #764ba2)",
+                                      }}
+                                    >
+                                      <span>{storyReplyData.text || "Story"}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
                               <div className="message-text-row">
                                 {displayMessageText ? (
                                   <p>{displayMessageText}</p>
-                                ) : !postShareData ? (
+                                ) : !postShareData && !storyReplyData ? (
                                   <p>{item.content}</p>
                                 ) : null}
 
@@ -1295,11 +1424,11 @@ function Messages() {
                                   })}
                                 </span>
 
-                                {/* WhatsApp Double Blue Tick (Seen) Indicator for Sent Messages */}
+                                {/* Double tick: blue once the other person has read it */}
                                 {mine && (
                                   <span
-                                    className="whatsapp-ticks seen"
-                                    title="Seen / Read"
+                                    className={`whatsapp-ticks ${item.readAt || selfChatActive ? "seen" : "sent"}`}
+                                    title={item.readAt ? `Seen ${new Date(item.readAt).toLocaleString()}` : "Sent"}
                                   >
                                     <svg
                                       viewBox="0 0 18 15"
@@ -1309,11 +1438,11 @@ function Messages() {
                                     >
                                       <path
                                         d="M15.01 3.31a.65.65 0 0 0-.92 0L9.85 7.55l-.75-.75a.65.65 0 0 0-.92.92l1.21 1.21a.65.65 0 0 0 .92 0l4.7-4.7a.65.65 0 0 0 0-.92z"
-                                        fill="#53bdeb"
+                                        fill="currentColor"
                                       />
                                       <path
                                         d="M10.75 3.31a.65.65 0 0 0-.92 0L5.59 7.55l-1.6-1.6a.65.65 0 0 0-.92.92l2.06 2.06a.65.65 0 0 0 .92 0l4.7-4.7a.65.65 0 0 0 0-.92z"
-                                        fill="#53bdeb"
+                                        fill="currentColor"
                                       />
                                     </svg>
                                   </span>
@@ -1407,6 +1536,11 @@ function Messages() {
                 )}
 
                 {/* ── Message Input Bar ── */}
+                {selectedUser.canMessage === false && !selfChatActive ? (
+                  <div className="sc-chat-restricted">
+                    🔒 You can&apos;t reply to this conversation. {selectedUser.isBlocked ? "You blocked this account." : "They only accept messages from certain people."}
+                  </div>
+                ) : (
                 <form className="message-input-bar" onSubmit={handleSendOrEdit}>
                   {/* Emoji Toggle */}
                   <button
@@ -1479,6 +1613,7 @@ function Messages() {
                     )}
                   </button>
                 </form>
+                )}
               </>
             ) : null}
           </section>

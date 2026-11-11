@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import BottomNav from "../components/BottomNav";
 import PostCard from "../components/PostCard";
-import api from "../api/api";
+import api, { getErrorMessage } from "../api/api";
+import { refreshCurrentUser } from "../utils/session";
+import { readableTextColor } from "../utils/color";
 import "./Profile.css";
 
 interface User {
@@ -13,6 +16,7 @@ interface User {
   name?: string;
   bio?: string;
   profileImageUrl?: string;
+  isPrivate?: boolean;
 }
 
 interface Post {
@@ -51,6 +55,10 @@ function Profile() {
   });
 
   const [isEditing, setIsEditing] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editUsername, setEditUsername] = useState("");
   const [bio, setBio] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -76,6 +84,8 @@ function Profile() {
       const response = await api.get("/users/me");
       setUser(response.data);
       setBio(response.data.bio || "");
+      setEditName(response.data.name || "");
+      setEditUsername(response.data.username || "");
 
       // Load follow stats
       const statsResponse = await api.get(`/follows/stats/${response.data.id}`);
@@ -94,60 +104,54 @@ function Profile() {
     }
   };
 
+  // Saved posts live on the server, so they're the same on every device.
   const loadSavedPosts = async () => {
     try {
-      const raw = localStorage.getItem("savedPosts");
-      if (!raw) {
-        setSavedPosts([]);
-        return;
-      }
-      const items = JSON.parse(raw);
-      if (!Array.isArray(items)) {
-        setSavedPosts([]);
-        return;
-      }
-
-      const objectItems: Post[] = items.filter(
-        (item: any) => item && typeof item === "object" && item.id
-      );
-      const idList = items
-        .map((item: any) =>
-          item && typeof item === "object" ? Number(item.id) : Number(item)
-        )
-        .filter(Boolean);
-
-      try {
-        const feedRes = await api.get("/posts?limit=50");
-        const feedPosts: Post[] = feedRes.data.posts || [];
-        const matchedFeed = feedPosts.filter((p) => idList.includes(p.id));
-
-        const mergedMap = new Map<number, Post>();
-        for (const obj of objectItems) mergedMap.set(obj.id, obj);
-        for (const p of matchedFeed) mergedMap.set(p.id, p);
-
-        setSavedPosts(Array.from(mergedMap.values()));
-      } catch {
-        setSavedPosts(objectItems);
-      }
+      const { data } = await api.get("/posts/saved");
+      setSavedPosts(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Error loading saved posts:", err);
       setSavedPosts([]);
     }
   };
 
+  const openEditor = () => {
+    if (!user) return;
+    setEditName(user.name || "");
+    setEditUsername(user.username || "");
+    setBio(user.bio || "");
+    setImage(null);
+    setImagePreview(null);
+    setEditError(null);
+    setIsEditing(true);
+  };
+
   const updateProfile = async () => {
+    if (savingProfile) return;
+    const username = editUsername.trim();
+    if (!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) {
+      setEditError('Username must be 3-30 characters: letters, numbers, "_" or "."');
+      return;
+    }
+    setSavingProfile(true);
+    setEditError(null);
     try {
       const formData = new FormData();
-      formData.append("bio", bio);
+      formData.append("name", editName.trim());
+      formData.append("username", username);
+      formData.append("bio", bio.trim());
       if (image) {
         formData.append("image", image);
       }
       await api.patch("/users/me", formData);
       await loadProfile();
-      alert("Profile updated successfully");
+      void refreshCurrentUser();
+      setIsEditing(false);
+      showToast("Profile updated ✓");
     } catch (error) {
-      console.error("Update profile error:", error);
-      alert("Failed to update profile");
+      setEditError(getErrorMessage(error, "Failed to update profile"));
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -228,7 +232,18 @@ function Profile() {
           <div className="profile-info-col">
             <div className="profile-title-row">
               <div className="profile-identity">
-                <h1 className="profile-main-username">{user.username}</h1>
+                <h1 className="profile-main-username">
+                  {user.username}
+                  {user.isPrivate && (
+                    <span
+                      className="sc-lock sc-clickable"
+                      title="Private account — manage follow requests"
+                      onClick={() => navigate("/activity?tab=requests")}
+                    >
+                      🔒
+                    </span>
+                  )}
+                </h1>
                 {user.name && <p className="profile-full-name">{user.name}</p>}
               </div>
 
@@ -236,7 +251,7 @@ function Profile() {
                 <button
                   type="button"
                   className="profile-btn-edit"
-                  onClick={() => setIsEditing(true)}
+                  onClick={openEditor}
                 >
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -259,6 +274,19 @@ function Profile() {
                     <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                   </svg>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigate("/settings")}
+                  className="profile-btn-icon"
+                  title="Settings"
+                  aria-label="Settings"
+                >
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -268,7 +296,7 @@ function Profile() {
                 <span className="profile-stat-number">{ownPosts.length}</span>
                 <span className="profile-stat-label">Posts</span>
               </div>
-              <div className="profile-stat-card" onClick={() => navigate("/following")}>
+              <div className="profile-stat-card" onClick={() => navigate("/followers")}>
                 <span className="profile-stat-number">{followStats.followersCount}</span>
                 <span className="profile-stat-label">Followers</span>
               </div>
@@ -409,10 +437,7 @@ function Profile() {
                       className="text-post-preview"
                       style={{
                         backgroundColor: post.backgroundColor || "#F3F4F6",
-                        color:
-                          (post.backgroundColor || "") === "#111827"
-                            ? "#fff"
-                            : "#111827",
+                        color: readableTextColor(post.backgroundColor || "#F3F4F6"),
                         fontSize: `${Math.min(Math.max((post.fontSize || 20) * 0.7, 13), 20)}px`,
                       }}
                     >
@@ -431,7 +456,7 @@ function Profile() {
         </section>
 
         {/* ── Post Detail Modal (Clicking post in grid) ── */}
-        {selectedPost && (
+        {selectedPost && createPortal(
           <div
             className="post-modal-overlay"
             onClick={() => setSelectedPost(null)}
@@ -452,11 +477,12 @@ function Profile() {
                 onDelete={handlePostChange}
               />
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* ── Edit Profile Modal ── */}
-        {isEditing && (
+        {isEditing && createPortal(
           <div className="edit-overlay" onClick={() => setIsEditing(false)}>
             <div className="edit-modal" onClick={(e) => e.stopPropagation()}>
               <div className="edit-header">
@@ -490,14 +516,41 @@ function Profile() {
               </div>
 
               <div className="edit-form-group">
-                <label>Bio</label>
+                <label htmlFor="edit-name">Name</label>
+                <input
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="Your name"
+                  maxLength={60}
+                />
+              </div>
+
+              <div className="edit-form-group">
+                <label htmlFor="edit-username">Username</label>
+                <input
+                  id="edit-username"
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value.replace(/\s/g, ""))}
+                  placeholder="username"
+                  maxLength={30}
+                />
+              </div>
+
+              <div className="edit-form-group">
+                <label htmlFor="edit-bio">
+                  Bio <span className="sc-char-count">{bio.length}/150</span>
+                </label>
                 <textarea
+                  id="edit-bio"
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
                   placeholder="Write something about yourself..."
                   maxLength={150}
                 />
               </div>
+
+              {editError && <div className="sc-inline-error" role="alert">{editError}</div>}
 
               <div className="edit-actions">
                 <button
@@ -508,23 +561,23 @@ function Profile() {
                 </button>
                 <button
                   className="save-edit"
-                  onClick={() => {
-                    updateProfile();
-                    setIsEditing(false);
-                  }}
+                  onClick={() => void updateProfile()}
+                  disabled={savingProfile}
                 >
-                  Save Changes
+                  {savingProfile ? "Saving…" : "Save Changes"}
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* Toast notification */}
-        {toastMsg && (
+        {toastMsg && createPortal(
           <div className="profile-toast">
             {toastMsg}
-          </div>
+          </div>,
+          document.body
         )}
       </main>
 

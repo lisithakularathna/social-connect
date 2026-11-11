@@ -234,7 +234,7 @@
 /* ── Toast ── */
 .profile-toast {
   position: fixed;
-  bottom: 30px;
+  bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(18, 18, 24, 0.94);

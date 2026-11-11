@@ -620,15 +620,15 @@
 
 .story-viewer-caption {
   position: absolute;
-  bottom: 24px;
+  bottom: 84px;
   left: 16px;
   right: 16px;
-  padding: 12px 16px;
-  background: rgba(0, 0, 0, 0.6);
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(8px);
   border-radius: 12px;
   color: #ffffff;
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   text-align: center;
   z-index: 25;
@@ -713,4 +713,503 @@
     height: 100vh;
     border-radius: 0;
   }
+}
+
+/* ── Story Viewer Bottom Controls / Footer ── */
+.story-viewer-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 35;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.45) 75%, transparent 100%);
+  padding: 16px 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Quick Reactions Row */
+.story-quick-reactions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.story-quick-emoji-btn {
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 20px;
+  padding: 4px 10px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.story-quick-emoji-btn:hover {
+  background: rgba(255, 255, 255, 0.32);
+  transform: translateY(-3px) scale(1.15);
+}
+
+.story-quick-emoji-btn:active {
+  transform: scale(0.92);
+}
+
+/* Reply Input Row */
+.story-reply-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.story-reply-input-box {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 9999px;
+  padding: 4px 6px 4px 16px;
+  transition: all 0.2s ease;
+}
+
+.story-reply-input-box:focus-within {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.2);
+}
+
+.story-reply-input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 6px 0;
+}
+
+.story-reply-input::placeholder {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.story-send-reply-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.story-send-reply-btn:hover {
+  transform: scale(1.08);
+  filter: brightness(1.1);
+}
+
+.story-send-reply-btn:active {
+  transform: scale(0.95);
+}
+
+/* Big Heart Reaction Button */
+.story-heart-react-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  flex-shrink: 0;
+}
+
+.story-heart-react-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.12);
+}
+
+.story-heart-react-btn:active {
+  transform: scale(0.88);
+}
+
+.story-heart-icon {
+  font-size: 22px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* ── Own Story Footer: "Seen by X" ── */
+.story-owner-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.story-viewers-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  max-width: 320px;
+}
+
+.story-viewers-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.story-viewers-preview-stack {
+  display: flex;
+  align-items: center;
+  height: 28px;
+}
+
+.story-stack-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid #ffffff;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -8px;
+  overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
+}
+
+.story-stack-avatar:first-child {
+  margin-left: 0;
+}
+
+.story-stack-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.story-eye-icon {
+  font-size: 16px;
+}
+
+.story-viewers-count-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.story-viewers-count-text span:first-child {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.story-viewers-sub {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.story-viewers-chevron {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  transition: transform 0.2s ease;
+}
+
+/* ── Floating Reaction Particles ── */
+.floating-reaction-particle {
+  position: absolute;
+  bottom: 70px;
+  font-size: 34px;
+  pointer-events: none;
+  z-index: 40;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.4));
+  animation: floatStoryReaction 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes floatStoryReaction {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.6);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(-40px) scale(1.2);
+  }
+  75% {
+    opacity: 0.9;
+    transform: translateY(-180px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-260px) scale(0.8);
+  }
+}
+
+/* ── Toast Feedback Pill inside Story ── */
+.story-reply-feedback-pill {
+  position: absolute;
+  bottom: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 18px;
+  background: rgba(18, 18, 24, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 9999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 45;
+  pointer-events: none;
+  animation: feedbackPillPop 0.25s ease-out;
+}
+
+@keyframes feedbackPillPop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ── Slide-up Story Viewers Sheet ── */
+.story-viewers-sheet-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: fadeInStoryOverlay 0.2s ease;
+}
+
+@keyframes fadeInStoryOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.story-viewers-sheet {
+  background: var(--card-bg, #1a1a24);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 -12px 36px rgba(0, 0, 0, 0.5);
+  max-height: 65vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUpStorySheet 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideUpStorySheet {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.story-viewers-sheet-header {
+  padding: 12px 18px 14px;
+  border-bottom: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.story-sheet-drag-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.story-sheet-title-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.story-sheet-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+}
+
+.story-sheet-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--input-bg, rgba(255, 255, 255, 0.1));
+  border: 0;
+  color: var(--text-secondary, #cccccc);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.story-sheet-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.story-viewers-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.story-no-viewers {
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--text-secondary, #aaaaaa);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.story-no-viewers-icon {
+  font-size: 36px;
+  margin-bottom: 4px;
+}
+
+.story-no-viewers h4 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-primary, #ffffff);
+}
+
+.story-no-viewers p {
+  margin: 0;
+  font-size: 13px;
+  max-width: 240px;
+  line-height: 1.4;
+}
+
+.story-viewer-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.story-viewer-row:hover {
+  background: var(--input-bg, rgba(255, 255, 255, 0.08));
+}
+
+.story-viewer-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.story-viewer-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.story-viewer-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.story-viewer-username {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.story-viewer-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary, #aaaaaa);
+}
+
+.story-viewer-reaction-badge {
+  font-size: 18px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: reactionBadgePulse 0.3s ease-out;
+}
+
+@keyframes reactionBadgePulse {
+  0% { transform: scale(0.5); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
 }

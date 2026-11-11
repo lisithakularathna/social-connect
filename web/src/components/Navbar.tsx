@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import api from "../api/api";
+import { clearSession, getCurrentUser, subscribeCurrentUser } from "../utils/session";
+import { formatBadge, useUnreadCounts } from "../utils/unread";
+import { isDarkActive, PREFS_CHANGED_EVENT, setThemeMode } from "../utils/prefs";
 import "./Navbar.css";
 
 interface Account {
@@ -14,27 +16,36 @@ interface Account {
 
 function Navbar() {
   const navigate = useNavigate();
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem("darkMode") === "true");
+  const [isDarkMode, setIsDarkMode] = useState(() => isDarkActive());
   const [account, setAccount] = useState<Account | null>(null);
   const [showMore, setShowMore] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
+  const unread = useUnreadCounts();
 
-  const loadAccount = async () => {
-    try {
-      const { data } = await api.get("/users/me");
-      setAccount(data);
-    } catch (error) {
-      console.error("Unable to load account details", error);
-    }
-  };
+  // Theme is applied by utils/prefs; just mirror it for the menu label.
+  useEffect(() => {
+    const sync = () => setIsDarkMode(isDarkActive());
+    window.addEventListener(PREFS_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(PREFS_CHANGED_EVENT, sync);
+  }, []);
 
   useEffect(() => {
-    document.body.classList.toggle("dark-mode", isDarkMode);
-    localStorage.setItem("darkMode", String(isDarkMode));
-  }, [isDarkMode]);
+    let alive = true;
+    void getCurrentUser().then((user) => alive && setAccount(user));
+    const unsubscribe = subscribeCurrentUser((user) => setAccount(user));
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, []);
 
+  // Keep in sync when another tab changes the theme.
   useEffect(() => {
-    void loadAccount();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "themeMode" || e.key === "darkMode") setIsDarkMode(isDarkActive());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   // Close more menu when clicking outside
@@ -53,8 +64,8 @@ function Navbar() {
   }, [showMore]);
 
   const logout = () => {
-    localStorage.removeItem("accessToken");
-    navigate("/login");
+    clearSession();
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -174,7 +185,11 @@ function Navbar() {
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                   </svg>
                 )}
-                <span className="nav-badge-dot" title="Active chats" />
+                {unread.messages > 0 && (
+                  <span className="nav-count-badge" aria-label={`${unread.messages} unread messages`}>
+                    {formatBadge(unread.messages)}
+                  </span>
+                )}
               </div>
               <span className="sidebar-link-label">Messages</span>
             </>
@@ -205,6 +220,11 @@ function Navbar() {
                   >
                     <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
                   </svg>
+                )}
+                {unread.activity > 0 && (
+                  <span className="nav-count-badge" aria-label={`${unread.activity} unread notifications`}>
+                    {formatBadge(unread.activity)}
+                  </span>
                 )}
               </div>
               <span className="sidebar-link-label">Notifications</span>
@@ -302,7 +322,7 @@ function Navbar() {
 
               <button
                 onClick={() => {
-                  setIsDarkMode(!isDarkMode);
+                  setThemeMode(isDarkMode ? "light" : "dark");
                   setShowMore(false);
                 }}
                 role="menuitem"

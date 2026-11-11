@@ -491,28 +491,29 @@
   background: var(--input-bg);
 }
 
-/* ── Toast notification banner ── */
+/* ── Toast notification banner (Positioned lower bottom) ── */
 .post-toast {
-  position: absolute;
-  top: 14px;
+  position: fixed;
+  bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  padding: 8px 16px;
-  background: rgba(20, 20, 20, 0.92);
+  padding: 11px 22px;
+  background: rgba(18, 18, 24, 0.94);
   color: #ffffff;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  border-radius: 20px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-  backdrop-filter: blur(8px);
-  z-index: 25;
+  border-radius: 9999px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 99999;
   pointer-events: none;
-  animation: toastFade .25s ease-out;
+  animation: postToastSlideUp .28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   white-space: nowrap;
 }
 
-@keyframes toastFade {
-  from { opacity: 0; transform: translate(-50%, -10px); }
+@keyframes postToastSlideUp {
+  from { opacity: 0; transform: translate(-50%, 18px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
