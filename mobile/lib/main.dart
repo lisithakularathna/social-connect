@@ -13,6 +13,12 @@ import 'google_sign_in_web_stub.dart'
     if (dart.library.html) 'google_sign_in_web_helper.dart';
 
 import 'messages_page.dart';
+import 'activity_page.dart';
+import 'api.dart';
+import 'auth_flow.dart';
+import 'people_pages.dart';
+import 'settings_pages.dart';
+import 'social_widgets.dart';
 
 // Google Sign-In configuration
 // Web OAuth Client ID used for:
@@ -115,7 +121,6 @@ Future<void> _exchangeTokenAndLogin(
   BuildContext context,
   String idToken,
 ) async {
-  final navigator = Navigator.of(context);
   final response = await http.post(
     Uri.parse('$apiBaseUrl/auth/google'),
     headers: {'Content-Type': 'application/json'},
@@ -124,14 +129,9 @@ Future<void> _exchangeTokenAndLogin(
 
   if (response.statusCode == 200 || response.statusCode == 201) {
     final data = jsonDecode(response.body);
-    final accessToken = data['accessToken'];
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('accessToken', accessToken);
     if (!context.mounted) return;
-    navigator.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const HomePage()),
-      (route) => false,
-    );
+    // Handles 2FA-protected accounts too.
+    await completeLogin(context, data);
   } else {
     String errorMessage =
         'Status Code: ${response.statusCode}\nBody: ${response.body}';
@@ -220,6 +220,18 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await loadThemePreference();
   await loadApiBaseUrl();
+  MessageNavigationCallbacks.onOpenPost = (context, post) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PostDetailPage(post: post)),
+    );
+  };
+  MessageNavigationCallbacks.onOpenProfile = (context, userId, name) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => UserProfilePage(userId: userId, userName: name)),
+    );
+  };
   runApp(const SocialConnectApp());
 }
 
@@ -363,7 +375,7 @@ class SocialConnectApp extends StatelessWidget {
             ),
             useMaterial3: true,
           ),
-          home: const LoginPage(),
+          home: const AuthGate(),
         );
       },
     );
@@ -397,59 +409,6 @@ String formatTimeAgo(dynamic dateValue) {
   }
 }
 
-
-// ======================================================
-// SAVED POSTS (LOCAL)
-// ======================================================
-
-const String _savedPostsKey = 'savedPosts';
-
-Future<List<Map<String, dynamic>>> loadSavedPosts() async {
-  final prefs = await SharedPreferences.getInstance();
-  final raw = prefs.getStringList(_savedPostsKey) ?? [];
-  final result = <Map<String, dynamic>>[];
-  for (final item in raw) {
-    try {
-      final decoded = jsonDecode(item);
-      if (decoded is Map) {
-        result.add(Map<String, dynamic>.from(decoded));
-      }
-    } catch (_) {}
-  }
-  return result;
-}
-
-Future<bool> isPostSaved(dynamic postId) async {
-  final posts = await loadSavedPosts();
-  return posts.any((p) => p['id'].toString() == postId.toString());
-}
-
-Future<bool> toggleSavedPost(Map<String, dynamic> post) async {
-  final prefs = await SharedPreferences.getInstance();
-  final raw = prefs.getStringList(_savedPostsKey) ?? [];
-  final postId = post['id']?.toString();
-  if (postId == null) return false;
-
-  final index = raw.indexWhere((item) {
-    try {
-      final decoded = jsonDecode(item);
-      return decoded is Map && decoded['id']?.toString() == postId;
-    } catch (_) {
-      return false;
-    }
-  });
-
-  final bool saved;
-  if (index >= 0) {
-    raw.removeAt(index);
-    saved = false;
-  } else {
-    raw.add(jsonEncode(post));
-    saved = true;
-  }
-  await prefs.setStringList(_savedPostsKey, raw);
-  return saved;
-}
 
 // ======================================================
 // LOGIN PAGE
@@ -528,24 +487,9 @@ class _LoginPageState extends State<LoginPage> {
       if (response.statusCode == 201 ||
           response.statusCode == 200) {
         final data = jsonDecode(response.body);
-
-        final accessToken = data['accessToken'];
-
-        final prefs = await SharedPreferences.getInstance();
-
-        await prefs.setString(
-          'accessToken',
-          accessToken,
-        );
-
         if (!mounted) return;
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const HomePage(),
-          ),
-        );
+        // Saves the session, or asks for a 2FA code first.
+        await completeLogin(context, data);
       } else {
         if (!mounted) return;
 
@@ -858,9 +802,10 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 32),
 
-                  // ── Register link ──
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  // ── Register link (wraps on narrow screens / large text) ──
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
                         "Don't have an account? ",
@@ -919,135 +864,111 @@ class _HomePageState extends State<HomePage> {
   List<dynamic> posts = [];
 
   bool isLoading = true;
+  bool isLoadingMore = false;
+  bool hasMore = true;
+  int page = 1;
+  String scope = 'all'; // 'all' | 'following'
   String? errorMessage;
-  int unreadNotificationCount = 0;
+  List<String> hiddenWords = [];
+  final ScrollController _scroll = ScrollController();
+  int _requestSeq = 0;
+
+  int _currentNavIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_onScroll);
+    _init();
+  }
+
+  Future<void> _init() async {
+    final prefs = await SharedPreferences.getInstance();
+    scope = prefs.getString('feedScope') ?? 'all';
+    hiddenWords = await loadHiddenWords();
+    UnreadCounter.start();
+    migrateLocalDataOnce();
     loadPosts();
-    loadUnreadNotifications();
   }
 
-  // ====================================================
-  // LOAD UNREAD NOTIFICATIONS
-  // ====================================================
-
-  Future<void> loadUnreadNotifications() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('accessToken');
-      if (token == null) return;
-
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/notifications/unread-count'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (mounted) {
-          setState(() {
-            unreadNotificationCount = data['count'] ?? 0;
-          });
-        }
-      }
-    } catch (_) {}
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
   }
 
-  // ====================================================
-  // LOAD POSTS
-  // ====================================================
-
-  Future<void> loadPosts() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    loadUnreadNotifications();
-
-    try {
-      final prefs =
-          await SharedPreferences.getInstance();
-
-      final token = prefs.getString('accessToken');
-
-      if (token == null || token.isEmpty) {
-        setState(() {
-          errorMessage = 'Login token not found';
-          isLoading = false;
-        });
-        return;
-      }
-
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/posts'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data is List) {
-          posts = data;
-        } else if (data is Map && data['posts'] is List) {
-          // Backend now returns { posts, pagination } for /posts.
-          posts = data['posts'];
-        } else if (data is Map &&
-            data['value'] is List) {
-          posts = data['value'];
-        } else {
-          posts = [];
-        }
-
-        setState(() {
-          isLoading = false;
-        });
-      } else {
-        setState(() {
-          errorMessage =
-              'Failed to load posts: ${response.statusCode}';
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        errorMessage =
-            'Connection error: $e';
-        isLoading = false;
-      });
+  void _onScroll() {
+    if (!_scroll.hasClients || isLoading || isLoadingMore || !hasMore) return;
+    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 900) {
+      _loadPage(page + 1);
     }
   }
 
   // ====================================================
-  // LOGOUT
+  // LOAD POSTS (paginated)
   // ====================================================
 
-  Future<void> logout() async {
-    final prefs =
-        await SharedPreferences.getInstance();
+  Future<void> loadPosts() async {
+    UnreadCounter.refresh();
+    hiddenWords = await loadHiddenWords();
+    await _loadPage(1);
+  }
 
-    await prefs.remove('accessToken');
+  Future<void> _loadPage(int pageToLoad) async {
+    final seq = ++_requestSeq;
+    setState(() {
+      if (pageToLoad == 1) {
+        isLoading = posts.isEmpty;
+        errorMessage = null;
+      } else {
+        isLoadingMore = true;
+      }
+    });
 
-    if (!mounted) return;
+    final res = await Api.get('/posts?page=$pageToLoad&limit=10&scope=$scope');
+    if (!mounted || seq != _requestSeq) return;
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const LoginPage(),
-      ),
-      (route) => false,
-    );
+    if (res.ok) {
+      final data = res.data;
+      final list = data is List ? data : (data is Map && data['posts'] is List ? data['posts'] as List : []);
+      setState(() {
+        if (pageToLoad == 1) {
+          posts = list;
+        } else {
+          final seen = posts.map((p) => p['id']).toSet();
+          posts = [...posts, ...list.where((p) => !seen.contains(p['id']))];
+        }
+        page = pageToLoad;
+        hasMore = data is Map && data['pagination'] is Map ? data['pagination']['hasMore'] == true : false;
+        isLoading = false;
+        isLoadingMore = false;
+      });
+    } else {
+      setState(() {
+        if (pageToLoad == 1) errorMessage = res.message('Failed to load posts');
+        isLoading = false;
+        isLoadingMore = false;
+      });
+      if (pageToLoad > 1) showSnack(context, res.message("Couldn't load more posts"), error: true);
+    }
+  }
+
+  Future<void> _switchScope(String next) async {
+    if (next == scope) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('feedScope', next);
+    setState(() {
+      scope = next;
+      posts = [];
+      hasMore = true;
+      isLoading = true;
+    });
+    _loadPage(1);
   }
 
   // ====================================================
   // BUILD
   // ====================================================
-
-  int _currentNavIndex = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -1073,22 +994,20 @@ class _HomePageState extends State<HomePage> {
                   icon: Icon(Icons.add, color: isDark ? Colors.white : Colors.black, size: 28),
                 ),
                 IconButton(
-                  tooltip: 'Theme',
-                  onPressed: () {
-                    themeNotifier.value = themeNotifier.value == ThemeMode.light
-                        ? ThemeMode.dark
-                        : ThemeMode.light;
-                  },
+                  tooltip: isDark ? 'Light mode' : 'Dark mode',
+                  onPressed: () => setThemePreference(isDark ? ThemeMode.light : ThemeMode.dark),
                   icon: Icon(
-                    themeNotifier.value == ThemeMode.light
-                        ? Icons.dark_mode_outlined
-                        : Icons.light_mode_outlined,
+                    isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
                     color: isDark ? Colors.white : Colors.black,
                   ),
                 ),
                 IconButton(
-                  onPressed: logout,
-                  icon: Icon(Icons.logout, color: isDark ? Colors.white : Colors.black),
+                  tooltip: 'Settings',
+                  onPressed: () async {
+                    await Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
+                    if (mounted) loadPosts();
+                  },
+                  icon: Icon(Icons.settings_outlined, color: isDark ? Colors.white : Colors.black),
                 ),
               ],
               bottom: PreferredSize(
@@ -1111,9 +1030,9 @@ class _HomePageState extends State<HomePage> {
           // ── 2: Create Post (modal, not a page in stack) ──
           const SizedBox.shrink(),
           // ── 3: Notifications ──
-          const NotificationsPage(),
+          _currentNavIndex == 3 ? const NotificationsPage() : const SizedBox.shrink(),
           // ── 4: Messages ──
-          const MessagesPage(),
+          const SizedBox.shrink(),
           // ── 5: Profile ──
           const ProfilePage(),
         ],
@@ -1123,64 +1042,77 @@ class _HomePageState extends State<HomePage> {
         decoration: BoxDecoration(
           border: Border(top: BorderSide(color: borderColor, width: 1)),
         ),
-        child: BottomNavigationBar(
-          currentIndex: _currentNavIndex == 2 ? 0 : _currentNavIndex,
-          onTap: (index) async {
-            if (index == 2) {
-              await _openCreateMenu();
-              return;
-            }
+        child: ValueListenableBuilder<UnreadCounts>(
+          valueListenable: UnreadCounter.notifier,
+          builder: (context, unread, _) => BottomNavigationBar(
+            currentIndex: _currentNavIndex == 2 ? 0 : _currentNavIndex,
+            onTap: (index) async {
+              if (index == 2) {
+                await _openCreateMenu();
+                return;
+              }
 
-            if (index == 4) {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const MessagesPage(),
+              if (index == 4) {
+                UnreadCounter.clearMessages();
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const MessagesPage(),
+                  ),
+                );
+                UnreadCounter.refresh();
+                return;
+              }
+
+              if (index == 0 && _currentNavIndex == 0 && _scroll.hasClients) {
+                _scroll.animateTo(0, duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
+              }
+              setState(() => _currentNavIndex = index);
+              if (index == 3) UnreadCounter.clearActivity();
+            },
+            items: [
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home),
+                label: 'Home',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.search_outlined),
+                activeIcon: Icon(Icons.search),
+                label: 'Search',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.add_box_outlined),
+                activeIcon: Icon(Icons.add_box),
+                label: 'Add',
+              ),
+              BottomNavigationBarItem(
+                icon: Badge(
+                  isLabelVisible: unread.activity > 0,
+                  label: Text(unread.activity > 99 ? '99+' : '${unread.activity}'),
+                  backgroundColor: const Color(0xFFD94D6A),
+                  child: const Icon(Icons.favorite_outline),
                 ),
-              );
-              return;
-            }
-
-            setState(() => _currentNavIndex = index);
-            if (index == 3) loadUnreadNotifications();
-          },
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Home',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.search_outlined),
-              activeIcon: Icon(Icons.search),
-              label: 'Search',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.add_box_outlined),
-              activeIcon: Icon(Icons.add_box),
-              label: 'Add',
-            ),
-            BottomNavigationBarItem(
-              icon: unreadNotificationCount > 0
-                  ? Badge.count(
-                      count: unreadNotificationCount,
-                      child: const Icon(Icons.favorite_outline),
-                    )
-                  : const Icon(Icons.favorite_outline),
-              activeIcon: const Icon(Icons.favorite),
-              label: 'Notifications',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.chat_bubble_outline_rounded),
-              activeIcon: Icon(Icons.chat_bubble_rounded),
-              label: 'Messages',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: Icon(Icons.person),
-              label: 'Profile',
-            ),
-          ],
+                activeIcon: const Icon(Icons.favorite),
+                label: 'Notifications',
+              ),
+              BottomNavigationBarItem(
+                icon: Badge(
+                  isLabelVisible: unread.messages > 0,
+                  label: Text(unread.messages > 99 ? '99+' : '${unread.messages}'),
+                  backgroundColor: const Color(0xFFD94D6A),
+                  child: const Icon(Icons.chat_bubble_outline_rounded),
+                ),
+                activeIcon: const Icon(Icons.chat_bubble_rounded),
+                label: 'Messages',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.person_outline),
+                activeIcon: Icon(Icons.person),
+                label: 'Profile',
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1190,16 +1122,13 @@ class _HomePageState extends State<HomePage> {
   // FEED
   // ====================================================
 
-
   Future<void> _openCreateMenu() async {
     final choice = await showModalBottomSheet<String>(
       context: context, showDragHandle: true,
       builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         const ListTile(title: Text('Create', style: TextStyle(fontWeight: FontWeight.w800)), subtitle: Text('Share something with your followers')),
         ListTile(leading: const Icon(Icons.add_circle_outline), title: const Text('Story'), subtitle: const Text('Photo or quick update · 24 hours'), onTap: () => Navigator.pop(sheetContext, 'story')),
-        ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Post'), subtitle: const Text('Photo, text, caption and tags'), onTap: () => Navigator.pop(sheetContext, 'post')),
-        ListTile(leading: const Icon(Icons.repeat_rounded), title: const Text('Repost'), subtitle: const Text('Repost a post from your feed'), onTap: () => Navigator.pop(sheetContext, 'repost')),
-        ListTile(leading: const Icon(Icons.person_add_alt_1_outlined), title: const Text('Tag people'), subtitle: const Text('Tag users while creating a post'), onTap: () => Navigator.pop(sheetContext, 'post')),
+        ListTile(leading: const Icon(Icons.photo_library_outlined), title: const Text('Post'), subtitle: const Text('Photo, text, caption, @mentions and #hashtags'), onTap: () => Navigator.pop(sheetContext, 'post')),
       ])),
     );
     if (!mounted || choice == null) return;
@@ -1212,9 +1141,50 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Widget _scopeTabs(bool isDark) {
+    Widget tab(String value, String label) {
+      final active = scope == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => _switchScope(value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: active ? (isDark ? const Color(0xFF1F1F1F) : const Color(0xFFF1F1EE)) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: active ? const Border(bottom: BorderSide(color: Color(0xFFD94D6A), width: 2)) : null,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: active ? (isDark ? Colors.white : Colors.black) : Colors.grey,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: isDark ? const Color(0xFF2A2A2A) : const Color(0xFFE7E7E2)),
+        ),
+        child: Row(children: [tab('all', 'For you'), tab('following', 'Following')]),
+      ),
+    );
+  }
+
   Widget buildFeed() {
-    if (isLoading) return const Center(child: CircularProgressIndicator());
-    if (errorMessage != null) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (isLoading && posts.isEmpty) return const Center(child: CircularProgressIndicator());
+    if (errorMessage != null && posts.isEmpty) {
       return ListView(children: [
         SizedBox(height: MediaQuery.of(context).size.height * .3),
         Center(child: Column(children: [
@@ -1224,20 +1194,36 @@ class _HomePageState extends State<HomePage> {
         ])),
       ]);
     }
+    final visible = posts
+        .where((p) => !containsHiddenWord('${p['title'] ?? ''} ${p['content'] ?? ''}', hiddenWords))
+        .toList();
     return ListView(
+      controller: _scroll,
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
         StoryStrip(posts: posts, onCreateStory: () async {
           await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateStoryPage()));
           if (mounted) setState(() {});
         }),
-        if (posts.isEmpty)
-          const Padding(padding: EdgeInsets.symmetric(vertical: 120), child: Column(children: [
-            Icon(Icons.photo_camera_outlined, size: 70, color: Colors.grey),
-            SizedBox(height: 12), Text('No posts yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-            SizedBox(height: 4), Text('Follow people to see their posts', style: TextStyle(color: Colors.grey)),
+        _scopeTabs(isDark),
+        if (visible.isEmpty)
+          Padding(padding: const EdgeInsets.symmetric(vertical: 100), child: Column(children: [
+            Icon(scope == 'following' ? Icons.people_outline : Icons.photo_camera_outlined, size: 70, color: Colors.grey),
+            const SizedBox(height: 12),
+            Text(scope == 'following' ? 'Your following feed is quiet' : 'No posts yet',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text(scope == 'following' ? 'Follow people to see their posts here' : 'Be the first to share something',
+                style: const TextStyle(color: Colors.grey)),
           ]))
-        else ...posts.map((post) => PostCard(post: post)),
+        else ...visible.map((post) => PostCard(key: ValueKey('post-${post['id']}'), post: post, onChanged: loadPosts)),
+        if (isLoadingMore)
+          const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(strokeWidth: 2.4))),
+        if (!hasMore && visible.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 18, 20, 30),
+            child: Center(child: Text("You're all caught up ✓", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w600))),
+          ),
       ],
     );
   }
@@ -1304,10 +1290,13 @@ Color _postTextColor(dynamic hex, bool isDark) => _postColor(hex, isDark).comput
 
 class PostCard extends StatefulWidget {
   final dynamic post;
+  /// Called after the card changes the feed (delete, mute, block).
+  final VoidCallback? onChanged;
 
   const PostCard({
     super.key,
     required this.post,
+    this.onChanged,
   });
 
   @override
@@ -1322,6 +1311,8 @@ class _PostCardState extends State<PostCard>
   bool _showHeart = false;
   bool isSaved = false;
   bool isLoadingSave = false;
+  bool _removed = false;
+  int? _myId;
   late AnimationController _heartController;
   late Animation<double> _heartAnim;
 
@@ -1331,7 +1322,10 @@ class _PostCardState extends State<PostCard>
     // Use data from backend response if available
     likeCount = widget.post['likesCount'] ?? 0;
     isLiked = widget.post['isLiked'] ?? false;
-    _loadSavedState();
+    isSaved = widget.post['isSaved'] == true;
+    Api.currentUserId().then((id) {
+      if (mounted) setState(() => _myId = id);
+    });
 
     _heartController = AnimationController(
       vsync: this,
@@ -1384,6 +1378,13 @@ class _PostCardState extends State<PostCard>
           isLiked = !isLiked;
           likeCount += isLiked ? 1 : -1;
         });
+      } else if (mounted) {
+        String msg = 'Could not update like';
+        try {
+          final d = jsonDecode(response.body);
+          if (d['message'] != null) msg = d['message'].toString();
+        } catch (_) {}
+        showSnack(context, msg, error: true);
       }
     } catch (_) {}
     finally {
@@ -1391,52 +1392,278 @@ class _PostCardState extends State<PostCard>
     }
   }
 
-  Future<void> _loadSavedState() async {
-    final saved = await isPostSaved(widget.post['id']);
-    if (mounted) setState(() => isSaved = saved);
-  }
-
+  // Saved posts live on the server, so they sync with the web app.
   Future<void> toggleSave() async {
     if (isLoadingSave) return;
-    setState(() => isLoadingSave = true);
-    try {
-      final saved = await toggleSavedPost(Map<String, dynamic>.from(widget.post as Map));
-      if (!mounted) return;
-      setState(() => isSaved = saved);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(saved ? 'Post saved' : 'Post removed from saved')),
-      );
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not update saved post')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => isLoadingSave = false);
+    final next = !isSaved;
+    setState(() {
+      isLoadingSave = true;
+      isSaved = next;
+    });
+    final id = widget.post['id'];
+    final res = next ? await Api.post('/posts/$id/save') : await Api.delete('/posts/$id/save');
+    if (!mounted) return;
+    setState(() => isLoadingSave = false);
+    if (res.ok) {
+      showSnack(context, next ? 'Saved to your collection' : 'Removed from saved');
+    } else {
+      setState(() => isSaved = !next);
+      showSnack(context, res.message('Could not update saved posts'), error: true);
     }
+  }
+
+  int get _ownerId {
+    final owner = widget.post['ownerId'];
+    if (owner is int) return owner;
+    final reposter = widget.post['repostedBy'];
+    if (widget.post['isRepost'] == true && reposter is Map && reposter['id'] is int) return reposter['id'];
+    final a = widget.post['authorId'];
+    return a is int ? a : int.tryParse('$a') ?? 0;
+  }
+
+  bool get _isOwner => _myId != null && _myId == _ownerId;
+
+  Map<String, dynamic>? get _menuTarget {
+    final reposter = widget.post['repostedBy'];
+    if (widget.post['isRepost'] == true && reposter is Map) return Map<String, dynamic>.from(reposter);
+    final author = widget.post['author'];
+    return author is Map ? Map<String, dynamic>.from(author) : null;
+  }
+
+  Future<void> _deletePost() async {
+    final isRepost = widget.post['isRepost'] == true;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isRepost ? 'Undo repost?' : 'Delete post?'),
+        content: Text(isRepost ? 'It will be removed from your profile.' : "This can't be undone."),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(isRepost ? 'Undo' : 'Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final res = await Api.delete('/posts/${widget.post['id']}');
+    if (!mounted) return;
+    if (res.ok) {
+      setState(() => _removed = true);
+      showSnack(context, isRepost ? 'Repost removed' : 'Post deleted');
+      widget.onChanged?.call();
+    } else {
+      showSnack(context, res.message("Couldn't delete"), error: true);
+    }
+  }
+
+  Future<void> _muteOrBlock({required bool block}) async {
+    final target = _menuTarget;
+    final id = target?['id'];
+    if (id == null) return;
+    if (block) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Block @${target?['username'] ?? 'user'}?'),
+          content: const Text("They won't be able to find your profile, see your posts or message you."),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Block'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    final res = await Api.post('/users/$id/${block ? 'block' : 'mute'}');
+    if (!mounted) return;
+    if (res.ok) {
+      setState(() => _removed = true);
+      showSnack(context, block ? 'Blocked @${target?['username']}' : 'Muted @${target?['username']}. Undo in Settings → Safety.');
+      widget.onChanged?.call();
+    } else {
+      showSnack(context, res.message("Couldn't update"), error: true);
+    }
+  }
+
+  void _showPostMenu() {
+    final target = _menuTarget;
+    final linkId = widget.post['originalPostId'] ?? widget.post['id'];
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.open_in_full_rounded),
+            title: const Text('Open post'),
+            onTap: () {
+              Navigator.pop(ctx);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => PostDetailPage(post: widget.post)));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.link_rounded),
+            title: const Text('Copy link'),
+            onTap: () {
+              Navigator.pop(ctx);
+              Clipboard.setData(ClipboardData(text: '$webAppUrl/post/$linkId'));
+              showSnack(context, 'Link copied');
+            },
+          ),
+          if (!_isOwner) ...[
+            ListTile(
+              leading: const Icon(Icons.volume_off_outlined),
+              title: Text('Mute @${target?['username'] ?? 'user'}'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _muteOrBlock(block: false);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.block, color: Colors.redAccent),
+              title: Text('Block @${target?['username'] ?? 'user'}', style: const TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _muteOrBlock(block: true);
+              },
+            ),
+          ] else
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: Text(widget.post['isRepost'] == true ? 'Undo repost' : 'Delete post',
+                  style: const TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deletePost();
+              },
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _buildSharePayload(String displayTitle, String displayContent) {
+    final author = widget.post['author'];
+    final authorId = int.tryParse(author?['id']?.toString() ?? '') ?? 0;
+    return {
+      'id': widget.post['originalPostId'] ?? widget.post['id'],
+      'title': displayTitle,
+      'content': displayContent,
+      'imageUrl': widget.post['imageUrl'],
+      'backgroundColor': widget.post['backgroundColor'],
+      'fontSize': widget.post['fontSize'],
+      'author': {
+        'id': authorId,
+        'username': (author?['username'] ?? 'user').toString(),
+        'name': author?['name']?.toString(),
+        'profileImageUrl': author?['profileImageUrl']?.toString(),
+      },
+    };
+  }
+
+  void _showShareOptions(BuildContext context, String displayTitle, String displayContent) {
+    final author = widget.post['author'];
+    final authorUsername = (author?['username'] ?? author?['name'] ?? 'author').toString();
+    final authorId = int.tryParse(author?['id']?.toString() ?? '');
+    final sharePayload = _buildSharePayload(displayTitle, displayContent);
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[400],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              if (authorId != null)
+                ListTile(
+                  leading: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF6366F1)),
+                  title: Text('Message @$authorUsername with post'),
+                  subtitle: const Text('Send direct message to the author'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ChatPage(
+                          userId: authorId,
+                          username: authorUsername,
+                          profileImageUrl: author?['profileImageUrl']?.toString(),
+                          sharedPost: sharePayload,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ListTile(
+                leading: const Icon(Icons.send_rounded, color: Color(0xFF10B981)),
+                title: const Text('Share in another chat...'),
+                subtitle: const Text('Choose a friend or conversation to share with'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MessagesPage(initialSharedPost: sharePayload),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.link_rounded),
+                title: const Text('Copy Post Link'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  final link = '$webAppUrl/post/${widget.post['originalPostId'] ?? widget.post['id']}';
+                  Clipboard.setData(ClipboardData(text: link));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Post link copied to clipboard')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.repeat_rounded, color: Color(0xFF10B981)),
+                title: const Text('Repost to your feed'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  repostPost();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void openPostChat() {
-    final author = widget.post['author'];
-    final authorId = int.tryParse(author?['id']?.toString() ?? '');
-    if (authorId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Post owner could not be found')),
-      );
-      return;
-    }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ChatPage(
-          userId: authorId,
-          username: (author?['username'] ?? author?['name'] ?? 'User').toString(),
-          profileImageUrl: author?['profileImageUrl']?.toString(),
-          sharedPost: Map<String, dynamic>.from(widget.post as Map),
-        ),
-      ),
-    );
+    final rawTitle = widget.post['title']?.toString() ?? '';
+    final rawContent = widget.post['content']?.toString() ?? '';
+    String displayTitle = rawTitle.replaceFirst(RegExp(r'^Reposted:\s*', caseSensitive: false), '').trim();
+    String displayContent = rawContent
+        .replaceAll(RegExp(r'\[REPOST_META:[^\]]+\]\s*'), '')
+        .replaceAll(RegExp(r'\n*↻\s*Reposted from post #\d+'), '')
+        .trim();
+
+    _showShareOptions(context, displayTitle, displayContent);
   }
 
 
@@ -1466,12 +1693,40 @@ class _PostCardState extends State<PostCard>
 
   @override
   Widget build(BuildContext context) {
+    if (_removed) return const SizedBox.shrink();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final author = widget.post['author'];
     final username = author?['username'] ?? author?['name'] ?? 'Unknown';
     final name = author?['name'] ?? username;
-    final title = widget.post['title'] ?? '';
-    final content = widget.post['content'] ?? '';
+
+    final rawTitle = widget.post['title']?.toString() ?? '';
+    final rawContent = widget.post['content']?.toString() ?? '';
+
+    // Check if post is a repost
+    final isRepost = widget.post['isRepost'] == true ||
+        widget.post['repostedBy'] != null ||
+        rawTitle.startsWith('Reposted:') ||
+        rawContent.contains('↻ Reposted from post #') ||
+        rawContent.contains('[REPOST_META:');
+
+    final reposter = widget.post['repostedBy'] is Map
+        ? Map<String, dynamic>.from(widget.post['repostedBy'] as Map)
+        : (isRepost && author is Map ? Map<String, dynamic>.from(author) : null);
+
+    // Clean title and content if legacy or not yet parsed
+    String displayTitle = rawTitle;
+    String displayContent = rawContent;
+
+    if (displayTitle.startsWith('Reposted:')) {
+      displayTitle = displayTitle.replaceFirst(RegExp(r'^Reposted:\s*', caseSensitive: false), '').trim();
+    }
+    if (displayContent.contains('[REPOST_META:')) {
+      displayContent = displayContent.replaceAll(RegExp(r'\[REPOST_META:[^\]]+\]\s*'), '').trim();
+    }
+    if (displayContent.contains('↻ Reposted from post #')) {
+      displayContent = displayContent.replaceAll(RegExp(r'\n*↻\s*Reposted from post #\d+'), '').trim();
+    }
+
     final imageUrl = widget.post['imageUrl'];
     final authorPic = author?['profileImageUrl'];
     final commentsCount = widget.post['commentsCount'] ?? 0;
@@ -1485,6 +1740,71 @@ class _PostCardState extends State<PostCard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+
+          // ── Modern Repost Header (Twitter/Threads style) ──
+          if (isRepost && reposter != null)
+            InkWell(
+              onTap: () {
+                final reposterId = reposter['id'];
+                final reposterName = reposter['username'] ?? reposter['name'] ?? 'User';
+                if (reposterId != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => UserProfilePage(
+                        userId: reposterId is int ? reposterId : int.tryParse(reposterId.toString()) ?? 0,
+                        userName: reposterName.toString(),
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF10B981).withValues(alpha: 0.12) : const Color(0xFFECFDF5),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: isDark ? const Color(0xFF10B981).withValues(alpha: 0.2) : const Color(0xFFA7F3D0),
+                      width: 0.8,
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.repeat_rounded,
+                      size: 16,
+                      color: Color(0xFF10B981),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: RichText(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        text: TextSpan(
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: isDark ? Colors.grey[300] : Colors.grey[700],
+                          ),
+                          children: [
+                            TextSpan(
+                              text: '${reposter['username'] ?? reposter['name'] ?? 'Someone'}',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const TextSpan(text: ' reposted'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // ── Header: Avatar + Username + Dots ──
           GestureDetector(
@@ -1567,11 +1887,7 @@ class _PostCardState extends State<PostCard>
                     constraints: const BoxConstraints(),
                     icon: Icon(Icons.more_horiz,
                         color: isDark ? Colors.white : Colors.black),
-                    onPressed: () {
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (context) => PostDetailPage(post: widget.post),
-                      ));
-                    },
+                    onPressed: _showPostMenu,
                   ),
                 ],
               ),
@@ -1611,7 +1927,7 @@ class _PostCardState extends State<PostCard>
               ),
             )
           else
-            // No image - show title as tap-target
+            // No image - show text as tap-target
             GestureDetector(
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(
@@ -1624,9 +1940,14 @@ class _PostCardState extends State<PostCard>
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 30),
                 decoration: BoxDecoration(color: _postColor(widget.post['backgroundColor'], isDark)),
                 child: Center(child: Text(
-                  content.toString().trim().isNotEmpty ? content.toString() : title.toString(),
+                  displayContent.isNotEmpty ? displayContent : displayTitle,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: (widget.post['fontSize'] is num) ? (widget.post['fontSize'] as num).toDouble() : 22, fontWeight: FontWeight.w700, color: _postTextColor(widget.post['backgroundColor'], isDark), height: 1.3),
+                  style: TextStyle(
+                    fontSize: (widget.post['fontSize'] is num) ? (widget.post['fontSize'] as num).toDouble() : 22,
+                    fontWeight: FontWeight.w700,
+                    color: _postTextColor(widget.post['backgroundColor'], isDark),
+                    height: 1.3,
+                  ),
                 )),
               ),
             ),
@@ -1659,7 +1980,7 @@ class _PostCardState extends State<PostCard>
                 GestureDetector(
                   onTap: () {
                     Navigator.push(context, MaterialPageRoute(
-                      builder: (context) => CommentsPage(postId: widget.post['id']),
+                      builder: (context) => CommentsPage(postId: widget.post['id'], postOwnerId: _ownerId),
                     ));
                   },
                   child: Padding(
@@ -1670,7 +1991,7 @@ class _PostCardState extends State<PostCard>
                 ),
                 const SizedBox(width: 4),
 
-                // Message / Share
+                // Repost to Feed
                 GestureDetector(
                   onTap: repostPost,
                   child: Padding(
@@ -1680,8 +2001,9 @@ class _PostCardState extends State<PostCard>
                 ),
                 const SizedBox(width: 4),
 
+                // Send / Share Post with chat
                 GestureDetector(
-                  onTap: openPostChat,
+                  onTap: () => _showShareOptions(context, displayTitle, displayContent),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                     child: Icon(Icons.send_outlined,
@@ -1707,8 +2029,16 @@ class _PostCardState extends State<PostCard>
             ),
           ),
 
-          // ── Likes count ──
-          if (likeCount > 0)
+          // ── Likes count (authors can hide it from others) ──
+          if (widget.post['likesHidden'] == true)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Text(
+                isLiked ? 'Liked by you' : 'Likes are hidden',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.grey[500]),
+              ),
+            )
+          else if (likeCount > 0)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Text(
@@ -1722,26 +2052,26 @@ class _PostCardState extends State<PostCard>
             ),
 
           // ── Caption ──
-          if (title.toString().isNotEmpty || content.toString().isNotEmpty)
+          if (displayTitle.isNotEmpty || displayContent.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 4, 14, 2),
-              child: RichText(
-                text: TextSpan(
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    color: isDark ? Colors.white : Colors.black,
-                    height: 1.4,
-                  ),
-                  children: [
-                    TextSpan(
-                      text: '${username.toString()} ',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    TextSpan(
-                      text: title.toString().isNotEmpty ? title.toString() : content.toString(),
-                    ),
-                  ],
+              child: RichTextView(
+                displayTitle.isNotEmpty
+                    ? (displayContent.isNotEmpty && displayContent != displayTitle
+                        ? '$displayTitle\n$displayContent'
+                        : displayTitle)
+                    : displayContent,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: isDark ? Colors.white : Colors.black,
+                  height: 1.4,
                 ),
+                leading: [
+                  TextSpan(
+                    text: '${username.toString()} ',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
               ),
             ),
 
@@ -1750,7 +2080,7 @@ class _PostCardState extends State<PostCard>
             GestureDetector(
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(
-                  builder: (context) => CommentsPage(postId: widget.post['id']),
+                  builder: (context) => CommentsPage(postId: widget.post['id'], postOwnerId: _ownerId),
                 ));
               },
               child: Padding(
@@ -1775,10 +2105,13 @@ class _PostCardState extends State<PostCard>
   }
 class CommentsPage extends StatefulWidget {
   final int postId;
+  /// Lets the post's owner moderate (delete) any comment.
+  final int? postOwnerId;
 
   const CommentsPage({
     super.key,
     required this.postId,
+    this.postOwnerId,
   });
 
   @override
@@ -1790,6 +2123,8 @@ class _CommentsPageState extends State<CommentsPage> {
   bool isLoading = true;
   String? errorMessage;
   int? currentUserId;
+  String? restriction;
+  List<String> hiddenWords = [];
 
   final commentController = TextEditingController();
 
@@ -1843,9 +2178,16 @@ class _CommentsPageState extends State<CommentsPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        final words = await loadHiddenWords();
 
         setState(() {
-          comments = data['comments'] ?? [];
+          hiddenWords = words;
+          comments = (data['comments'] as List? ?? [])
+              .where((c) => !containsHiddenWord(c['content']?.toString(), words))
+              .toList();
+          restriction = data['canComment'] == false
+              ? (data['commentRestriction']?.toString() ?? 'Comments are limited on this post')
+              : null;
           isLoading = false;
         });
       } else {
@@ -2001,6 +2343,21 @@ class _CommentsPageState extends State<CommentsPage> {
             child: buildComments(),
           ),
 
+          if (restriction != null)
+            SafeArea(
+              top: false,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                color: Theme.of(context).cardColor,
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  const Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+                  const SizedBox(width: 8),
+                  Flexible(child: Text(restriction!, style: const TextStyle(color: Colors.grey))),
+                ]),
+              ),
+            )
+          else
           Container(
             padding: const EdgeInsets.fromLTRB(
               12,
@@ -2153,6 +2510,8 @@ class _CommentsPageState extends State<CommentsPage> {
         final commentUserId = comment['userId'];
         final isMyComment = currentUserId != null &&
             commentUserId == currentUserId;
+        final canModerate = isMyComment ||
+            (currentUserId != null && currentUserId == widget.postOwnerId);
 
         return ListTile(
           onTap: () {
@@ -2209,12 +2568,12 @@ class _CommentsPageState extends State<CommentsPage> {
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(
+            child: RichTextView(
               content.toString(),
-              style: const TextStyle(fontSize: 14),
+              style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
             ),
           ),
-          trailing: isMyComment
+          trailing: canModerate
               ? IconButton(
                   icon: const Icon(
                     Icons.delete_outline,
@@ -2347,6 +2706,14 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (response.statusCode == 201 ||
           response.statusCode == 200) {
+        if (!mounted) return;
+
+        final data = jsonDecode(response.body);
+        if (data is Map && data['accessToken'] != null) {
+          // The API returns a session on signup — no second login needed.
+          await completeLogin(context, data);
+          return;
+        }
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2665,399 +3032,6 @@ class _RegisterPageState extends State<RegisterPage> {
 }
 
 
-// ======================================================
-// ======================================================
-// PRIVACY & BLOCKED USERS (LOCAL SETTINGS)
-// ======================================================
-
-const String _privateAccountKey = 'privateAccount';
-const String _messagePrivacyKey = 'messagePrivacy';
-const String _blockedUsersKey = 'blockedUsers';
-
-Future<bool> loadPrivateAccountPreference() async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getBool(_privateAccountKey) ?? false;
-}
-
-Future<void> setPrivateAccountPreference(bool value) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool(_privateAccountKey, value);
-}
-
-Future<String> loadMessagePrivacyPreference() async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getString(_messagePrivacyKey) ?? 'Everyone';
-}
-
-Future<void> setMessagePrivacyPreference(String value) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString(_messagePrivacyKey, value);
-}
-
-Future<List<Map<String, dynamic>>> loadBlockedUsers() async {
-  final prefs = await SharedPreferences.getInstance();
-  final raw = prefs.getStringList(_blockedUsersKey) ?? [];
-  final result = <Map<String, dynamic>>[];
-  for (final item in raw) {
-    try {
-      final decoded = jsonDecode(item);
-      if (decoded is Map) result.add(Map<String, dynamic>.from(decoded));
-    } catch (_) {}
-  }
-  return result;
-}
-
-Future<void> saveBlockedUsers(List<Map<String, dynamic>> users) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setStringList(_blockedUsersKey, users.map((u) => jsonEncode(u)).toList());
-}
-
-class PrivacySettingsPage extends StatefulWidget {
-  const PrivacySettingsPage({super.key});
-  @override
-  State<PrivacySettingsPage> createState() => _PrivacySettingsPageState();
-}
-
-class _PrivacySettingsPageState extends State<PrivacySettingsPage> {
-  bool privateAccount = false;
-  String messagePrivacy = 'Everyone';
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final privateValue = await loadPrivateAccountPreference();
-    final messageValue = await loadMessagePrivacyPreference();
-    if (!mounted) return;
-    setState(() {
-      privateAccount = privateValue;
-      messagePrivacy = messageValue;
-    });
-  }
-
-  Future<void> _chooseMessagePrivacy() async {
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text('Message Privacy', style: TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text('Choose who can send you messages'),
-            ),
-            RadioGroup<String>(
-              groupValue: messagePrivacy,
-              onChanged: (value) => Navigator.pop(ctx, value),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final option in ['Everyone', 'Followers', 'No one'])
-                    RadioListTile<String>(
-                      value: option,
-                      title: Text(option),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-    if (selected == null) return;
-    await setMessagePrivacyPreference(selected);
-    if (mounted) setState(() => messagePrivacy = selected);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Privacy'), centerTitle: true),
-      body: ListView(
-        children: [
-          SwitchListTile(
-            secondary: const Icon(Icons.lock_outline),
-            title: const Text('Private Account', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text(privateAccount ? 'Only approved followers can see your content' : 'Anyone can see your profile and posts'),
-            value: privateAccount,
-            onChanged: (value) async {
-              setState(() => privateAccount = value);
-              await setPrivateAccountPreference(value);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.chat_bubble_outline),
-            title: const Text('Message Privacy', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text(messagePrivacy),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: _chooseMessagePrivacy,
-          ),
-          ListTile(
-            leading: const Icon(Icons.block_outlined),
-            title: const Text('Blocked Users', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('Manage accounts you have blocked'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BlockedUsersPage())),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class BlockedUsersPage extends StatefulWidget {
-  const BlockedUsersPage({super.key});
-  @override
-  State<BlockedUsersPage> createState() => _BlockedUsersPageState();
-}
-
-class _BlockedUsersPageState extends State<BlockedUsersPage> {
-  final searchController = TextEditingController();
-  List<Map<String, dynamic>> blockedUsers = [];
-  List<dynamic> searchResults = [];
-  bool searching = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadBlocked();
-  }
-
-  @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadBlocked() async {
-    final users = await loadBlockedUsers();
-    if (mounted) setState(() => blockedUsers = users);
-  }
-
-  Future<void> _searchUsers(String value) async {
-    final query = value.trim();
-    if (query.isEmpty) {
-      if (mounted) setState(() => searchResults = []);
-      return;
-    }
-    setState(() => searching = true);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('accessToken');
-      if (token == null || token.isEmpty) return;
-      final encoded = Uri.encodeQueryComponent(query);
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/users/search?q=$encoded'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (mounted) setState(() => searchResults = data is List ? data : []);
-      }
-    } catch (_) {
-    } finally {
-      if (mounted) setState(() => searching = false);
-    }
-  }
-
-  Future<void> _blockUser(dynamic user) async {
-    final id = user['id'];
-    if (id == null || blockedUsers.any((u) => u['id'].toString() == id.toString())) return;
-    final item = <String, dynamic>{
-      'id': id,
-      'username': user['username'] ?? 'user',
-      'name': user['name'] ?? '',
-      'profileImageUrl': user['profileImageUrl'],
-    };
-    final updated = [...blockedUsers, item];
-    await saveBlockedUsers(updated);
-    if (!mounted) return;
-    setState(() {
-      blockedUsers = updated;
-      searchResults = [];
-      searchController.clear();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('@${item['username']} blocked')),
-    );
-  }
-
-  Future<void> _unblockUser(Map<String, dynamic> user) async {
-    final updated = blockedUsers.where((u) => u['id'].toString() != user['id'].toString()).toList();
-    await saveBlockedUsers(updated);
-    if (mounted) {
-      setState(() => blockedUsers = updated);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('@${user['username']} unblocked')),
-      );
-    }
-  }
-
-  Widget _avatar(dynamic imageUrl) {
-    if (imageUrl != null && imageUrl.toString().isNotEmpty) {
-      return CircleAvatar(radius: 24, backgroundImage: NetworkImage(imageUrl.toString()));
-    }
-    return const CircleAvatar(radius: 24, child: Icon(Icons.person_outline));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Blocked Users'), centerTitle: true),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          TextField(
-            controller: searchController,
-            onChanged: _searchUsers,
-            decoration: InputDecoration(
-              hintText: 'Search username to block',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: searching ? const Padding(
-                padding: EdgeInsets.all(12),
-                child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-              ) : null,
-            ),
-          ),
-          if (searchResults.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            const Text('Search results', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey)),
-            ...searchResults.map((user) => ListTile(
-              leading: _avatar(user['profileImageUrl']),
-              title: Text(user['username']?.toString() ?? 'user'),
-              subtitle: Text(user['name']?.toString() ?? ''),
-              trailing: const Icon(Icons.block_outlined),
-              onTap: () => _blockUser(user),
-            )),
-          ],
-          const SizedBox(height: 20),
-          const Text('Blocked accounts', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.grey)),
-          if (blockedUsers.isEmpty)
-            const Padding(padding: EdgeInsets.symmetric(vertical: 32), child: Center(child: Text('No blocked users')))
-          else
-            ...blockedUsers.map((user) => ListTile(
-              leading: _avatar(user['profileImageUrl']),
-              title: Text(user['username']?.toString() ?? 'user'),
-              subtitle: Text(user['name']?.toString() ?? ''),
-              trailing: TextButton(onPressed: () => _unblockUser(user), child: const Text('Unblock')),
-            )),
-        ],
-      ),
-    );
-  }
-}
-
-// SETTINGS
-// ======================================================
-
-class SettingsPage extends StatefulWidget{const SettingsPage({super.key});@override State<SettingsPage> createState()=>_SettingsPageState();}
-class _SettingsPageState extends State<SettingsPage>{
- bool likes=true,comments=true,followers=true,messages=true,mentions=true;
- @override void initState(){super.initState();_load();}
- Future<void> _load()async{final p=await SharedPreferences.getInstance();if(!mounted)return;setState((){likes=p.getBool('notif_likes')??true;comments=p.getBool('notif_comments')??true;followers=p.getBool('notif_followers')??true;messages=p.getBool('notif_messages')??true;mentions=p.getBool('notif_mentions')??true;});}
- void _theme(){showModalBottomSheet(context:context,showDragHandle:true,builder:(s)=>ValueListenableBuilder<ThemeMode>(valueListenable:themeNotifier,builder:(c,m,_)=>SafeArea(child:RadioGroup<ThemeMode>(groupValue:m,onChanged:(v)async{if(v==null)return;await setThemePreference(v);if(s.mounted)Navigator.pop(s);},child:Column(mainAxisSize:MainAxisSize.min,children:[const ListTile(title:Text('Appearance',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text('Choose Light, Dark or System')),const RadioListTile<ThemeMode>(value:ThemeMode.light,title:Text('Light'),secondary:Icon(Icons.light_mode_outlined)),const RadioListTile<ThemeMode>(value:ThemeMode.dark,title:Text('Dark'),secondary:Icon(Icons.dark_mode_outlined)),const RadioListTile<ThemeMode>(value:ThemeMode.system,title:Text('System'),secondary:Icon(Icons.brightness_auto_outlined))])))));}
- 
-
-Widget tile(IconData i,String t,String st,VoidCallback f)=>ListTile(contentPadding:const EdgeInsets.symmetric(horizontal:4),leading:Icon(i),title:Text(t,style:const TextStyle(fontWeight:FontWeight.w600)),subtitle:Text(st),trailing:const Icon(Icons.chevron_right_rounded),onTap:f);
- void _notifications()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>NotificationSettingsPage(likes:likes,comments:comments,followers:followers,messages:messages,mentions:mentions))).then((_)=>_load());
- @override Widget build(BuildContext context){final m=themeNotifier.value;final n=m==ThemeMode.dark?'Dark':m==ThemeMode.system?'System':'Light';return Scaffold(appBar:AppBar(title:const Text('Settings'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[const Text('Preferences',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),const SizedBox(height:6),tile(Icons.brightness_6_outlined,'Theme',n,_theme),tile(Icons.notifications_none_rounded,'Notification Settings','Likes, comments, followers, messages and mentions',_notifications),tile(Icons.lock_outline,'Privacy','Private account, message privacy and blocked users',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PrivacySettingsPage()))),const SizedBox(height:18),const Text('Account & Security',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),const SizedBox(height:6),tile(Icons.volume_off_outlined,'Muted Users','Manage accounts you have muted',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const MutedUsersPage()))),tile(Icons.lock_reset_outlined,'Change Password','Update your account password',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const ChangePasswordPage()))),tile(Icons.security_outlined,'Two-Factor Authentication','Extra security for your account',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const TwoFactorPage()))),tile(Icons.circle_outlined,'Activity Status','Show or hide your active status',()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const ActivityStatusPage()))),tile(Icons.delete_outline,'Delete Account','Permanently delete your account',()=>deleteAccount(context)),tile(Icons.logout_rounded,'Logout','Sign out of this device',()=>logoutUser(context))]));}
-}
-class NotificationSettingsPage extends StatefulWidget{final bool likes,comments,followers,messages,mentions;const NotificationSettingsPage({super.key,required this.likes,required this.comments,required this.followers,required this.messages,required this.mentions});@override State<NotificationSettingsPage> createState()=>_NotificationSettingsPageState();}
-class _NotificationSettingsPageState extends State<NotificationSettingsPage>{late bool likes,comments,followers,messages,mentions;@override void initState(){super.initState();likes=widget.likes;comments=widget.comments;followers=widget.followers;messages=widget.messages;mentions=widget.mentions;}Future<void> ch(String k,bool v)async{final p=await SharedPreferences.getInstance();await p.setBool(k,v);}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Notifications'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[const Text('Push notifications',style:TextStyle(fontSize:13,fontWeight:FontWeight.w800,color:Colors.grey)),SwitchListTile(title:const Text('Likes'),subtitle:const Text('When someone likes your post'),value:likes,onChanged:(v){setState(()=>likes=v);ch('notif_likes',v);}),SwitchListTile(title:const Text('Comments'),subtitle:const Text('When someone comments on your post'),value:comments,onChanged:(v){setState(()=>comments=v);ch('notif_comments',v);}),SwitchListTile(title:const Text('New followers'),subtitle:const Text('When someone follows you'),value:followers,onChanged:(v){setState(()=>followers=v);ch('notif_followers',v);}),SwitchListTile(title:const Text('Messages'),subtitle:const Text('New direct messages'),value:messages,onChanged:(v){setState(()=>messages=v);ch('notif_messages',v);}),SwitchListTile(title:const Text('Mentions'),subtitle:const Text('When someone mentions you'),value:mentions,onChanged:(v){setState(()=>mentions=v);ch('notif_mentions',v);})]));}
-void _openThemeSettingsFromProfile(BuildContext context) {
-  showModalBottomSheet(
-    context: context,
-    showDragHandle: true,
-    builder: (sheetContext) => ValueListenableBuilder<ThemeMode>(
-      valueListenable: themeNotifier,
-      builder: (context, mode, _) => SafeArea(
-        child: RadioGroup<ThemeMode>(
-          groupValue: mode,
-          onChanged: (v) async {
-            if (v == null) return;
-            await setThemePreference(v);
-            if (sheetContext.mounted) Navigator.pop(sheetContext);
-          },
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ListTile(
-                title: Text('Theme', style: TextStyle(fontWeight: FontWeight.w800)),
-                subtitle: Text('Choose Light, Dark or System'),
-              ),
-              const RadioListTile<ThemeMode>(
-                value: ThemeMode.light,
-                title: Text('Light'),
-              ),
-              const RadioListTile<ThemeMode>(
-                value: ThemeMode.dark,
-                title: Text('Dark'),
-              ),
-              const RadioListTile<ThemeMode>(
-                value: ThemeMode.system,
-                title: Text('System'),
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-
-// ======================================================
-// MORE ACCOUNT SETTINGS
-// ======================================================
-const String _mutedUsersKey='mutedUsers';
-const String _twoFactorKey='twoFactorEnabled';
-const String _activityStatusKey='activityStatus';
-
-Future<List<Map<String,dynamic>>> loadMutedUsers()async{
-  final p=await SharedPreferences.getInstance(); final raw=p.getStringList(_mutedUsersKey)??[];
-  return raw.map((x){try{final d=jsonDecode(x);return d is Map?Map<String,dynamic>.from(d):<String,dynamic>{};}catch(_){return <String,dynamic>{};}}).where((x)=>x.isNotEmpty).toList();
-}
-Future<void> saveMutedUsers(List<Map<String,dynamic>> users)async{final p=await SharedPreferences.getInstance();await p.setStringList(_mutedUsersKey,users.map(jsonEncode).toList());}
-
-class MutedUsersPage extends StatefulWidget{const MutedUsersPage({super.key});@override State<MutedUsersPage> createState()=>_MutedUsersPageState();}
-class _MutedUsersPageState extends State<MutedUsersPage>{
- final controller=TextEditingController();List<Map<String,dynamic>> muted=[];List<dynamic> results=[];bool searching=false;
- @override void initState(){super.initState();_load();}@override void dispose(){controller.dispose();super.dispose();}
- Future<void> _load()async{final v=await loadMutedUsers();if(mounted)setState(()=>muted=v);}
- Future<void> _search(String value)async{final q=value.trim();if(q.isEmpty){if(mounted)setState(()=>results=[]);return;}setState(()=>searching=true);try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');if(t==null||t.isEmpty)return;final res=await http.get(Uri.parse('$apiBaseUrl/users/search?q=${Uri.encodeQueryComponent(q)}'),headers:{'Authorization':'Bearer $t'});if(res.statusCode==200){final d=jsonDecode(res.body);if(mounted)setState(()=>results=d is List?d:[]);}}catch(_){}finally{if(mounted)setState(()=>searching=false);}}
- Future<void> _mute(dynamic u)async{final id=u['id'];if(id==null||muted.any((x)=>x['id'].toString()==id.toString()))return;final item=<String,dynamic>{'id':id,'username':u['username']??'user','name':u['name']??'','profileImageUrl':u['profileImageUrl']};final updated=[...muted,item];await saveMutedUsers(updated);if(!mounted)return;setState((){muted=updated;results=[];controller.clear();});ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text("@${item['username']} muted")));}
- Future<void> _unmute(Map<String,dynamic> u)async{final updated=muted.where((x)=>x['id'].toString()!=u['id'].toString()).toList();await saveMutedUsers(updated);if(mounted)setState(()=>muted=updated);}
- Widget _avatar(dynamic url)=>url!=null&&url.toString().isNotEmpty?CircleAvatar(radius:24,backgroundImage:NetworkImage(url.toString())):const CircleAvatar(radius:24,child:Icon(Icons.person_outline));
- @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Muted Users'),centerTitle:true),body:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[
-  TextField(controller:controller,onChanged:_search,decoration:InputDecoration(hintText:'Search username to mute',prefixIcon:const Icon(Icons.search),suffixIcon:searching?const Padding(padding:EdgeInsets.all(12),child:SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2))):null)),
-  if(results.isNotEmpty)...[const SizedBox(height:16),const Text('Search results',style:TextStyle(fontWeight:FontWeight.w800,color:Colors.grey)),...results.map((u)=>ListTile(leading:_avatar(u['profileImageUrl']),title:Text(u['username']?.toString()??'user'),subtitle:Text(u['name']?.toString()??''),trailing:const Icon(Icons.volume_off_outlined),onTap:()=>_mute(u)))],
-  const SizedBox(height:20),const Text('Muted accounts',style:TextStyle(fontWeight:FontWeight.w800,color:Colors.grey)),
-  if(muted.isEmpty)const Padding(padding:EdgeInsets.symmetric(vertical:32),child:Center(child:Text('No muted users')))else...muted.map((u)=>ListTile(leading:_avatar(u['profileImageUrl']),title:Text(u['username']?.toString()??'user'),subtitle:Text(u['name']?.toString()??''),trailing:TextButton(onPressed:()=>_unmute(u),child:const Text('Unmute')))),
- ]));
-}
-
-class ChangePasswordPage extends StatefulWidget{const ChangePasswordPage({super.key});@override State<ChangePasswordPage> createState()=>_ChangePasswordPageState();}
-class _ChangePasswordPageState extends State<ChangePasswordPage>{
- final current=TextEditingController(),next=TextEditingController(),confirm=TextEditingController();bool loading=false;
- @override void dispose(){current.dispose();next.dispose();confirm.dispose();super.dispose();}
- Future<void> _change()async{if(next.text.length<6){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('New password must be at least 6 characters')));return;}if(next.text!=confirm.text){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Passwords do not match')));return;}setState(()=>loading=true);try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');final res=await http.post(Uri.parse('$apiBaseUrl/auth/change-password'),headers:{'Content-Type':'application/json','Authorization':'Bearer $t'},body:jsonEncode({'currentPassword':current.text,'newPassword':next.text}));if(!mounted)return;if(res.statusCode==200){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Password changed successfully')));Navigator.pop(context);}else{String m='Failed to change password';try{final d=jsonDecode(res.body);m=d['message']?.toString()??m;}catch(_){ }ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(m)));}}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Connection error: $e')));}finally{if(mounted)setState(()=>loading=false);}}
- @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Change Password'),centerTitle:true),body:ListView(padding:const EdgeInsets.all(20),children:[TextField(controller:current,obscureText:true,decoration:const InputDecoration(labelText:'Current password',prefixIcon:Icon(Icons.lock_outline))),const SizedBox(height:14),TextField(controller:next,obscureText:true,decoration:const InputDecoration(labelText:'New password',prefixIcon:Icon(Icons.lock_reset_outlined))),const SizedBox(height:14),TextField(controller:confirm,obscureText:true,decoration:const InputDecoration(labelText:'Confirm new password',prefixIcon:Icon(Icons.check_circle_outline))),const SizedBox(height:24),SizedBox(height:50,child:ElevatedButton(onPressed:loading?null:_change,child:loading?const CircularProgressIndicator():const Text('Change Password')))]));
-}
-
-class TwoFactorPage extends StatefulWidget{const TwoFactorPage({super.key});@override State<TwoFactorPage> createState()=>_TwoFactorPageState();}
-class _TwoFactorPageState extends State<TwoFactorPage>{bool enabled=false;@override void initState(){super.initState();_load();}Future<void> _load()async{final p=await SharedPreferences.getInstance();if(mounted)setState(()=>enabled=p.getBool(_twoFactorKey)??false);}Future<void> _toggle(bool v)async{final p=await SharedPreferences.getInstance();await p.setBool(_twoFactorKey,v);if(mounted)setState(()=>enabled=v);}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Two-Factor Authentication'),centerTitle:true),body:ListView(children:[SwitchListTile(secondary:const Icon(Icons.security_outlined),title:const Text('Two-Factor Authentication',style:TextStyle(fontWeight:FontWeight.w600)),subtitle:Text(enabled?'Enabled on this device':'Disabled'),value:enabled,onChanged:_toggle),const Padding(padding:EdgeInsets.all(20),child:Text('2FA is currently a local setting. A production OTP/authenticator verification flow can be connected to the backend later.',style:TextStyle(color:Colors.grey)))]));}
-
-class ActivityStatusPage extends StatefulWidget{const ActivityStatusPage({super.key});@override State<ActivityStatusPage> createState()=>_ActivityStatusPageState();}
-class _ActivityStatusPageState extends State<ActivityStatusPage>{bool enabled=true;@override void initState(){super.initState();_load();}Future<void> _load()async{final p=await SharedPreferences.getInstance();if(mounted)setState(()=>enabled=p.getBool(_activityStatusKey)??true);}Future<void> _toggle(bool v)async{final p=await SharedPreferences.getInstance();await p.setBool(_activityStatusKey,v);if(mounted)setState(()=>enabled=v);}@override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Activity Status'),centerTitle:true),body:SwitchListTile(secondary:const Icon(Icons.circle_outlined),title:const Text('Show Activity Status',style:TextStyle(fontWeight:FontWeight.w600)),subtitle:const Text('Let others see when you are active'),value:enabled,onChanged:_toggle));}
-
-Future<void> logoutUser(BuildContext context)async{final p=await SharedPreferences.getInstance();await p.remove('accessToken');if(!context.mounted)return;Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const LoginPage()),(route)=>false);}
-Future<void> deleteAccount(BuildContext context)async{final ok=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Delete Account'),content:const Text('This permanently deletes your account, posts, likes, comments and follows. This action cannot be undone.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Cancel')),ElevatedButton(style:ElevatedButton.styleFrom(backgroundColor:Colors.red,foregroundColor:Colors.white),onPressed:()=>Navigator.pop(ctx,true),child:const Text('Delete'))]));if(ok!=true)return;try{final p=await SharedPreferences.getInstance();final t=p.getString('accessToken');final res=await http.delete(Uri.parse('$apiBaseUrl/users/me'),headers:{'Authorization':'Bearer $t'});if(!context.mounted)return;if(res.statusCode==200){await p.clear();if(!context.mounted)return;Navigator.pushAndRemoveUntil(context,MaterialPageRoute(builder:(_)=>const LoginPage()),(route)=>false);}else{ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Failed to delete account (${res.statusCode})')));}}catch(e){if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Connection error: $e')));}}
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
@@ -3068,6 +3042,7 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   int? myUserId;
   String? username;
+  bool isPrivateAccount = false;
   String? name;
   String? email;
   String? bio;
@@ -3141,6 +3116,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
         setState(() {
           myUserId = data['id'];
+          isPrivateAccount = data['isPrivate'] == true;
           username = data['username'];
           name = data['name'];
           email = data['email'];
@@ -3213,17 +3189,16 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
+  // Saved posts are stored on the server (shared with the web app).
   Future<void> loadSavedPostsForProfile() async {
-    try {
-      final posts = await loadSavedPosts();
-      if (!mounted) return;
-      setState(() {
-        savedPosts = posts;
-        isSavedPostsLoading = false;
-      });
-    } catch (_) {
-      if (mounted) setState(() => isSavedPostsLoading = false);
-    }
+    final res = await Api.get('/posts/saved');
+    if (!mounted) return;
+    setState(() {
+      if (res.ok && res.data is List) {
+        savedPosts = (res.data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      isSavedPostsLoading = false;
+    });
   }
 
   Future<void> pickImage() async {
@@ -3508,8 +3483,10 @@ class _ProfilePageState extends State<ProfilePage> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_outline, size: 16, color: isDark ? Colors.white : Colors.black),
-            const SizedBox(width: 6),
+            if (isPrivateAccount) ...[
+              Icon(Icons.lock_outline, size: 16, color: isDark ? Colors.white : Colors.black),
+              const SizedBox(width: 6),
+            ],
             Text(
               username ?? 'profile',
               style: TextStyle(
@@ -3537,16 +3514,9 @@ class _ProfilePageState extends State<ProfilePage> {
               if (val == 'settings') {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsPage()));
               } else if (val == 'theme') {
-                _openThemeSettingsFromProfile(context);
+                openThemeSheet(context);
               } else if (val == 'logout') {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.remove('accessToken');
-                if (!context.mounted) return;
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => const LoginPage()),
-                  (route) => false,
-                );
+                await logoutUser(context);
               }
             },
             itemBuilder: (ctx) => [
@@ -4081,19 +4051,16 @@ class _ProfilePageState extends State<ProfilePage> {
                     },
                     child: imageUrl != null && imageUrl.toString().isNotEmpty
                         ? Image.network(imageUrl, fit: BoxFit.cover)
-                        : Container(
-                            color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFEAEAEA),
-                            child: Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Text(
-                                  post['title'] ?? post['content'] ?? '',
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : Colors.grey[700]),
-                                ),
-                              ),
-                            ),
+                        : PostGridTile(
+                            post: Map<String, dynamic>.from(post as Map),
+                            onTap: () async {
+                              final result = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (context) => PostDetailPage(post: Map<String, dynamic>.from(post))),
+                              );
+                              if (result == 'deleted') loadMyPosts();
+                            },
                           ),
                   );
                 },
@@ -4498,9 +4465,42 @@ class _PostDetailPageState
   // ── BUILD ─────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final author = post['author'] as Map?;
+    final authorUsername = (author?['username'] ?? author?['name'] ?? 'User').toString();
+    final authorName = (author?['name'] ?? authorUsername).toString();
+    final authorPic = author?['profileImageUrl']?.toString();
+    final authorId = author?['id'];
+
+    final rawTitle = post['title']?.toString() ?? '';
+    final rawContent = post['content']?.toString() ?? '';
+
+    // Check if post is a repost
+    final isRepost = post['isRepost'] == true ||
+        post['repostedBy'] != null ||
+        rawTitle.startsWith('Reposted:') ||
+        rawContent.contains('↻ Reposted from post #') ||
+        rawContent.contains('[REPOST_META:');
+
+    final reposter = post['repostedBy'] is Map
+        ? Map<String, dynamic>.from(post['repostedBy'] as Map)
+        : (isRepost && author is Map ? Map<String, dynamic>.from(author) : null);
+
+    // Clean title and content if legacy or not yet parsed
+    String displayTitle = rawTitle;
+    String displayContent = rawContent;
+
+    if (displayTitle.startsWith('Reposted:')) {
+      displayTitle = displayTitle.replaceFirst(RegExp(r'^Reposted:\s*', caseSensitive: false), '').trim();
+    }
+    if (displayContent.contains('[REPOST_META:')) {
+      displayContent = displayContent.replaceAll(RegExp(r'\[REPOST_META:[^\]]+\]\s*'), '').trim();
+    }
+    if (displayContent.contains('↻ Reposted from post #')) {
+      displayContent = displayContent.replaceAll(RegExp(r'\n*↻\s*Reposted from post #\d+'), '').trim();
+    }
+
     final imageUrl = post['imageUrl'];
-    final title = post['title'] ?? '';
-    final content = post['content'] ?? '';
     final createdAt = _formatDate(
       post['createdAt']?.toString(),
     );
@@ -4543,6 +4543,109 @@ class _PostDetailPageState
           crossAxisAlignment:
               CrossAxisAlignment.start,
           children: [
+            // ── Modern Repost Header (Twitter/Threads style) ──
+            if (isRepost && reposter != null)
+              InkWell(
+                onTap: () {
+                  final reposterId = reposter['id'];
+                  final repName = reposter['username'] ?? reposter['name'] ?? 'User';
+                  if (reposterId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => UserProfilePage(
+                          userId: reposterId is int ? reposterId : int.tryParse(reposterId.toString()) ?? 0,
+                          userName: repName.toString(),
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF10B981).withValues(alpha: 0.12) : const Color(0xFFECFDF5),
+                    border: Border(
+                      bottom: BorderSide(
+                        color: isDark ? const Color(0xFF10B981).withValues(alpha: 0.2) : const Color(0xFFA7F3D0),
+                        width: 0.8,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.repeat_rounded,
+                        size: 18,
+                        color: Color(0xFF10B981),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: RichText(
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          text: TextSpan(
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: isDark ? Colors.grey[300] : Colors.grey[700],
+                            ),
+                            children: [
+                              TextSpan(
+                                text: '${reposter['username'] ?? reposter['name'] ?? 'Someone'}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
+                              const TextSpan(text: ' reposted'),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // ── Author Header ──
+            if (author != null)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                leading: CircleAvatar(
+                  radius: 20,
+                  backgroundImage: authorPic != null && authorPic.isNotEmpty
+                      ? NetworkImage(authorPic)
+                      : null,
+                  backgroundColor: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                  child: authorPic == null || authorPic.isEmpty
+                      ? Text(
+                          authorUsername.isNotEmpty ? authorUsername[0].toUpperCase() : 'U',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        )
+                      : null,
+                ),
+                title: Text(
+                  authorName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                subtitle: Text('@$authorUsername'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () {
+                  if (authorId != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UserProfilePage(
+                          userId: authorId is int ? authorId : int.tryParse(authorId.toString()) ?? 0,
+                          userName: authorName,
+                        ),
+                      ),
+                    );
+                  }
+                },
+              ),
+
             // IMAGE
             if (imageUrl != null &&
                 imageUrl.toString().isNotEmpty)
@@ -4572,11 +4675,16 @@ class _PostDetailPageState
                 width: double.infinity,
                 constraints: const BoxConstraints(minHeight: 260),
                 padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(color: _postColor(post['backgroundColor'], Theme.of(context).brightness == Brightness.dark)),
+                decoration: BoxDecoration(color: _postColor(post['backgroundColor'], isDark)),
                 child: Center(child: Text(
-                  content.trim().isNotEmpty ? content : title,
+                  displayContent.isNotEmpty ? displayContent : displayTitle,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: (post['fontSize'] is num) ? (post['fontSize'] as num).toDouble() : 22, fontWeight: FontWeight.w700, color: _postTextColor(post['backgroundColor'], Theme.of(context).brightness == Brightness.dark), height: 1.3),
+                  style: TextStyle(
+                    fontSize: (post['fontSize'] is num) ? (post['fontSize'] as num).toDouble() : 22,
+                    fontWeight: FontWeight.w700,
+                    color: _postTextColor(post['backgroundColor'], isDark),
+                    height: 1.3,
+                  ),
                 )),
               ),
 
@@ -4587,14 +4695,15 @@ class _PostDetailPageState
                 crossAxisAlignment:
                     CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      height: 1.3,
+                  if (displayTitle.isNotEmpty)
+                    Text(
+                      displayTitle,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        height: 1.3,
+                      ),
                     ),
-                  ),
 
                   if (createdAt.isNotEmpty) ...[
                     const SizedBox(height: 8),
@@ -4617,12 +4726,12 @@ class _PostDetailPageState
                     ),
                   ],
 
-                  if (content.isNotEmpty) ...[
+                  if (displayContent.isNotEmpty && displayContent != displayTitle) ...[
                     const SizedBox(height: 16),
                     const Divider(),
                     const SizedBox(height: 16),
                     Text(
-                      content,
+                      displayContent,
                       style: const TextStyle(
                         fontSize: 16,
                         height: 1.6,
@@ -4647,26 +4756,106 @@ class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
 
   @override
-  State<SearchPage> createState() =>
-      _SearchPageState();
+  State<SearchPage> createState() => _SearchPageState();
 }
 
 class _SearchPageState extends State<SearchPage> {
-  final TextEditingController searchController =
-      TextEditingController();
+  final TextEditingController searchController = TextEditingController();
 
   List<dynamic> results = [];
+  List<Map<String, dynamic>> history = [];
   bool isSearching = false;
   bool hasSearched = false;
+  Timer? _debounceTimer;
+
+  static const String _historyKey = 'search_history';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     searchController.dispose();
     super.dispose();
   }
 
+  Future<void> _loadHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_historyKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          setState(() {
+            history = decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveHistory(List<Map<String, dynamic>> newHistory) async {
+    setState(() => history = newHistory);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_historyKey, jsonEncode(newHistory));
+    } catch (_) {}
+  }
+
+  void _addToHistoryUser(Map<String, dynamic> user) {
+    final userId = user['id'];
+    if (userId == null) return;
+    final newItem = <String, dynamic>{
+      'id': 'user_$userId',
+      'type': 'user',
+      'user': user,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    final filtered = history.where((item) => item['id'] != newItem['id']).toList();
+    final updated = [newItem, ...filtered];
+    if (updated.length > 15) updated.removeRange(15, updated.length);
+    _saveHistory(updated);
+  }
+
+  void _addToHistoryKeyword(String query) {
+    final clean = query.trim();
+    if (clean.isEmpty) return;
+    final newItem = <String, dynamic>{
+      'id': 'kw_${clean.toLowerCase()}',
+      'type': 'keyword',
+      'query': clean,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    final filtered = history.where((item) => item['id'] != newItem['id']).toList();
+    final updated = [newItem, ...filtered];
+    if (updated.length > 15) updated.removeRange(15, updated.length);
+    _saveHistory(updated);
+  }
+
+  void _removeHistoryItem(String id) {
+    final updated = history.where((item) => item['id'] != id).toList();
+    _saveHistory(updated);
+  }
+
+  void _clearAllHistory() {
+    _saveHistory([]);
+  }
+
+  void _onSearchChanged(String query) {
+    setState(() {}); // updates clear button
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+      search(query);
+    });
+  }
+
   Future<void> search(String query) async {
-    if (query.trim().isEmpty) {
+    final clean = query.trim();
+    if (clean.isEmpty) {
       setState(() {
         results = [];
         hasSearched = false;
@@ -4680,20 +4869,14 @@ class _SearchPageState extends State<SearchPage> {
     });
 
     try {
-      final prefs =
-          await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('accessToken');
 
       if (token == null || token.isEmpty) return;
 
-      final encoded = Uri.encodeQueryComponent(
-        query.trim(),
-      );
-
+      final encoded = Uri.encodeQueryComponent(clean);
       final response = await http.get(
-        Uri.parse(
-          '$apiBaseUrl/users/search?q=$encoded',
-        ),
+        Uri.parse('$apiBaseUrl/users/search?q=$encoded'),
         headers: {
           'Authorization': 'Bearer $token',
         },
@@ -4701,114 +4884,160 @@ class _SearchPageState extends State<SearchPage> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        setState(() {
-          results = data is List ? data : [];
-          isSearching = false;
-          hasSearched = true;
-        });
+        if (mounted) {
+          setState(() {
+            results = data is List ? data : [];
+            isSearching = false;
+            hasSearched = true;
+          });
+        }
       } else {
+        if (mounted) {
+          setState(() {
+            isSearching = false;
+            hasSearched = true;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
           isSearching = false;
           hasSearched = true;
         });
       }
-    } catch (e) {
-      setState(() {
-        isSearching = false;
-        hasSearched = true;
-      });
+    }
+  }
+
+  void _handleSelectUser(Map<String, dynamic> user) {
+    _addToHistoryUser(user);
+    final userId = user['id'];
+    final name = (user['name'] ?? user['username'] ?? 'User').toString();
+    if (userId != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => UserProfilePage(
+            userId: userId is int ? userId : int.tryParse(userId.toString()) ?? 0,
+            userName: name,
+          ),
+        ),
+      );
+    }
+  }
+
+  void _handleSelectHistoryItem(Map<String, dynamic> item) {
+    if (item['type'] == 'user' && item['user'] is Map) {
+      _handleSelectUser(Map<String, dynamic>.from(item['user'] as Map));
+    } else if (item['query'] != null) {
+      final q = item['query'].toString();
+      searchController.text = q;
+      searchController.selection = TextSelection.fromPosition(
+        TextPosition(offset: q.length),
+      );
+      search(q);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final queryText = searchController.text.trim();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Search Users'),
-        centerTitle: true,
+        title: const Text(
+          'Search',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PostSearchPage(initialQuery: searchController.text.trim())),
+            ),
+            icon: const Icon(Icons.tag_rounded, size: 18),
+            label: const Text('Posts'),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: Column(
         children: [
-          // SEARCH BAR
+          // ── Search Input Box (Modern styling with clear button) ──
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: searchController,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText:
-                    'Search by name or username...',
-                prefixIcon:
-                    const Icon(Icons.search),
-                suffixIcon:
-                    searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(
-                              Icons.clear,
-                            ),
-                            onPressed: () {
-                              searchController
-                                  .clear();
-                              search('');
-                            },
-                          )
-                        : null,
-                border: OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(12),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF2E2E2E) : const Color(0xFFE5E7EB),
+                  width: 1,
                 ),
-                filled: true,
               ),
-              onChanged: (value) {
-                setState(() {}); // update suffix icon
-                Future.delayed(
-                  const Duration(
-                    milliseconds: 400,
+              child: TextField(
+                controller: searchController,
+                autofocus: true,
+                onChanged: _onSearchChanged,
+                onSubmitted: (val) {
+                  if (val.trim().isNotEmpty) {
+                    _addToHistoryKeyword(val.trim());
+                  }
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search by username or name...',
+                  hintStyle: TextStyle(
+                    fontSize: 14.5,
+                    color: isDark ? Colors.grey[500] : Colors.grey[500],
                   ),
-                  () {
-                    if (searchController.text ==
-                        value) {
-                      search(value);
-                    }
-                  },
-                );
-              },
+                  prefixIcon: Icon(
+                    Icons.search_rounded,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                    size: 22,
+                  ),
+                  suffixIcon: queryText.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          color: Colors.grey,
+                          onPressed: () {
+                            searchController.clear();
+                            search('');
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
             ),
           ),
 
-          // RESULTS
+          // ── Content Area: Results vs History ──
           Expanded(
-            child: _buildResults(),
+            child: queryText.isNotEmpty
+                ? _buildSearchResults(isDark, queryText)
+                : _buildRecentHistory(isDark),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildResults() {
+  // ── Live Search Results ──
+  Widget _buildSearchResults(bool isDark, String queryText) {
     if (isSearching) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    if (!hasSearched) {
       return Center(
         child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.person_search,
-              size: 80,
-              color: Colors.grey[300],
-            ),
+            const CircularProgressIndicator(),
             const SizedBox(height: 16),
             Text(
-              'Search for people',
+              'Searching accounts...',
               style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[500],
+                color: isDark ? Colors.grey[400] : Colors.grey[600],
+                fontSize: 14,
               ),
             ),
           ],
@@ -4816,40 +5045,59 @@ class _SearchPageState extends State<SearchPage> {
       );
     }
 
-    if (results.isEmpty) {
+    if (results.isEmpty && hasSearched) {
       return Center(
-        child: Column(
-          mainAxisAlignment:
-              MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.search_off,
-              size: 80,
-              color: Colors.grey[300],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No users found',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[500],
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF3F4F6),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.person_off_rounded,
+                  size: 48,
+                  color: isDark ? Colors.grey[600] : Colors.grey[400],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              const Text(
+                'No accounts found',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'We couldn\'t find anyone matching "$queryText".',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return ListView.builder(
+    return ListView.separated(
       itemCount: results.length,
+      separatorBuilder: (_, _) => Divider(
+        height: 1,
+        indent: 74,
+        color: isDark ? const Color(0xFF262626) : const Color(0xFFF1F1F1),
+      ),
       itemBuilder: (context, index) {
-        final user = results[index];
-        final profileImageUrl =
-            user['profileImageUrl'];
-        final name = user['name'] ?? '';
-        final username =
-            user['username'] ?? '';
-        final bio = user['bio'] ?? '';
+        final user = results[index] as Map;
+        final userMap = Map<String, dynamic>.from(user);
+        final profileImageUrl = user['profileImageUrl']?.toString();
+        final name = (user['name'] ?? '').toString();
+        final username = (user['username'] ?? '').toString();
+        final bio = (user['bio'] ?? '').toString();
 
         final initials = name.isNotEmpty
             ? name[0].toUpperCase()
@@ -4858,1162 +5106,95 @@ class _SearchPageState extends State<SearchPage> {
                 : '?';
 
         return ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 8,
-          ),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) =>
-                    UserProfilePage(
-                  userId: user['id'],
-                  userName: name.isNotEmpty
-                      ? name
-                      : username,
-                ),
-              ),
-            );
-          },
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          onTap: () => _handleSelectUser(userMap),
           leading: CircleAvatar(
-            radius: 26,
-            backgroundImage: profileImageUrl !=
-                        null &&
-                    profileImageUrl
-                        .toString()
-                        .isNotEmpty
+            radius: 24,
+            backgroundColor: const Color(0xFF6366F1).withValues(alpha: 0.15),
+            backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
                 ? NetworkImage(profileImageUrl)
                 : null,
-            child: profileImageUrl == null ||
-                    profileImageUrl
-                        .toString()
-                        .isEmpty
+            child: profileImageUrl == null || profileImageUrl.isEmpty
                 ? Text(
                     initials,
                     style: const TextStyle(
-                      fontWeight:
-                          FontWeight.bold,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Color(0xFF6366F1),
                     ),
                   )
                 : null,
           ),
           title: Text(
-            name.isNotEmpty ? name : username,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-            ),
+            '@$username',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
           subtitle: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('@$username'),
+              if (name.isNotEmpty)
+                Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark ? Colors.grey[300] : Colors.grey[800],
+                  ),
+                ),
               if (bio.isNotEmpty)
                 Text(
                   bio,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.grey[600],
+                    color: isDark ? Colors.grey[500] : Colors.grey[600],
                     fontSize: 12,
                   ),
                 ),
             ],
           ),
-          isThreeLine: bio.isNotEmpty,
           trailing: const Icon(
-            Icons.arrow_forward_ios,
-            size: 14,
+            Icons.chevron_right_rounded,
+            color: Colors.grey,
+            size: 20,
           ),
         );
       },
     );
   }
-}
 
-// ======================================================
-// USER PROFILE PAGE  (Step 6 — Other Profiles)
-// ======================================================
-
-class UserProfilePage extends StatefulWidget {
-  final int userId;
-  final String userName;
-
-  const UserProfilePage({
-    super.key,
-    required this.userId,
-    required this.userName,
-  });
-
-  @override
-  State<UserProfilePage> createState() =>
-      _UserProfilePageState();
-}
-
-class _UserProfilePageState
-    extends State<UserProfilePage> {
-  Map<String, dynamic>? profile;
-  List<dynamic> posts = [];
-  bool isProfileLoading = true;
-  bool isPostsLoading = true;
-  bool isFollowing = false;
-  bool isFollowActionLoading = false;
-  int followersCount = 0;
-  int followingCount = 0;
-  String? errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
-    _loadPosts();
-  }
-
-  Future<String?> _getToken() async {
-    final prefs =
-        await SharedPreferences.getInstance();
-    return prefs.getString('accessToken');
-  }
-
-  Future<void> _loadProfile() async {
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      final response = await http.get(
-        Uri.parse(
-          '$apiBaseUrl/users/${widget.userId}',
-        ),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          profile = data;
-          isFollowing = data['isFollowing'] ?? false;
-          followersCount = data['followersCount'] ?? 0;
-          followingCount = data['followingCount'] ?? 0;
-          isProfileLoading = false;
-        });
-      } else {
-        setState(() {
-          isProfileLoading = false;
-          errorMessage =
-              'Failed to load profile';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        isProfileLoading = false;
-        errorMessage = 'Connection error: $e';
-      });
-    }
-  }
-
-  Future<void> toggleFollow() async {
-    if (isFollowActionLoading) return;
-    setState(() {
-      isFollowActionLoading = true;
-    });
-
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      final response = await http.post(
-        Uri.parse(
-          '$apiBaseUrl/users/${widget.userId}/follow',
-        ),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          isFollowing = data['isFollowing'] ?? !isFollowing;
-          followersCount = data['followersCount'] ?? followersCount;
-          followingCount = data['followingCount'] ?? followingCount;
-        });
-
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isFollowing
-                  ? 'Followed ${widget.userName}'
-                  : 'Unfollowed ${widget.userName}',
-            ),
-            duration: const Duration(seconds: 2),
-            backgroundColor: isFollowing ? Colors.indigo : Colors.grey[800],
-          ),
-        );
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Action failed: ${response.body}'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Connection error: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          isFollowActionLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _loadPosts() async {
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      final response = await http.get(
-        Uri.parse(
-          '$apiBaseUrl/posts/user/${widget.userId}',
-        ),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          posts = data is List ? data : [];
-          isPostsLoading = false;
-        });
-      } else {
-        setState(() {
-          isPostsLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        isPostsLoading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final name =
-        profile?['name'] ?? widget.userName;
-    final username =
-        profile?['username'] ?? '';
-    final bio = profile?['bio'] ?? '';
-    final imageUrl =
-        profile?['profileImageUrl'];
-
-    final initials = name.isNotEmpty
-        ? name[0].toUpperCase()
-        : '?';
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.userName),
-        centerTitle: true,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await _loadProfile();
-          await _loadPosts();
-        },
-        child: isProfileLoading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : errorMessage != null
-                ? Center(
-                    child: Text(errorMessage!),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.all(
-                      20,
-                    ),
-                    children: [
-                      const SizedBox(height: 16),
-
-                      // AVATAR
-                      Center(
-                        child: CircleAvatar(
-                          radius: 55,
-                          backgroundImage: imageUrl !=
-                                      null &&
-                                  imageUrl
-                                      .toString()
-                                      .isNotEmpty
-                              ? NetworkImage(
-                                  imageUrl,
-                                )
-                              : null,
-                          child: imageUrl == null ||
-                                  imageUrl
-                                      .toString()
-                                      .isEmpty
-                              ? Text(
-                                  initials,
-                                  style:
-                                      const TextStyle(
-                                    fontSize: 36,
-                                    fontWeight:
-                                        FontWeight
-                                            .bold,
-                                  ),
-                                )
-                              : null,
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // NAME
-                      Center(
-                        child: Text(
-                          name,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight:
-                                FontWeight.bold,
-                          ),
-                        ),
-                      ),
-
-                      if (username.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Center(
-                          child: Text(
-                            '@$username',
-                            style: TextStyle(
-                              fontSize: 15,
-                              color:
-                                  Colors.grey[600],
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      if (bio.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        Center(
-                          child: Text(
-                            bio,
-                            textAlign:
-                                TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color:
-                                  Colors.grey[700],
-                              height: 1.5,
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      const SizedBox(height: 20),
-
-                      // FOLLOW / UNFOLLOW BUTTON
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: SizedBox(
-                          height: 46,
-                          child: isFollowing
-                              ? OutlinedButton.icon(
-                                  onPressed: isFollowActionLoading
-                                      ? null
-                                      : toggleFollow,
-                                  icon: isFollowActionLoading
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.check,
-                                          size: 20,
-                                        ),
-                                  label: const Text(
-                                    'Following',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  style: OutlinedButton.styleFrom(
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(14),
-                                    ),
-                                    side: BorderSide(
-                                      color: Colors.grey.shade400,
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                )
-                              : ElevatedButton.icon(
-                                  onPressed: isFollowActionLoading
-                                      ? null
-                                      : toggleFollow,
-                                  icon: isFollowActionLoading
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.person_add_rounded,
-                                          size: 20,
-                                        ),
-                                  label: const Text(
-                                    'Follow',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor:
-                                        Theme.of(context).colorScheme.primary,
-                                    foregroundColor: Colors.white,
-                                    elevation: 2,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(14),
-                                    ),
-                                  ),
-                                ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // STATS ROW
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            Column(
-                              children: [
-                                Text(
-                                  isPostsLoading ? '–' : '${posts.length}',
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Posts',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Container(
-                                height: 28,
-                                width: 1,
-                                color: Colors.grey.shade300),
-                            InkWell(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => UserListPage(
-                                      userId: widget.userId,
-                                      title: '${widget.userName}\'s Followers',
-                                      endpoint: 'followers',
-                                    ),
-                                  ),
-                                );
-                              },
-                              borderRadius: BorderRadius.circular(8),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 4,
-                                ),
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      '$followersCount',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Followers',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            Container(
-                                height: 28,
-                                width: 1,
-                                color: Colors.grey.shade300),
-                            InkWell(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => UserListPage(
-                                      userId: widget.userId,
-                                      title: '${widget.userName}\'s Following',
-                                      endpoint: 'following',
-                                    ),
-                                  ),
-                                );
-                              },
-                              borderRadius: BorderRadius.circular(8),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 4,
-                                ),
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      '$followingCount',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Following',
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // POSTS GRID
-                      if (isPostsLoading)
-                        const Center(
-                          child: CircularProgressIndicator(),
-                        )
-                      else if (posts.isEmpty)
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.photo_library_outlined,
-                                  size: 60,
-                                  color: Colors.grey[300],
-                                ),
-                                const SizedBox(height: 10),
-                                Text(
-                                  'No posts yet',
-                                  style: TextStyle(
-                                    color: Colors.grey[500],
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      else
-                        GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: posts.length,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            crossAxisSpacing: 3,
-                            mainAxisSpacing: 3,
-                          ),
-                          itemBuilder: (context, index) {
-                            final post = posts[index];
-                            final pImageUrl = post['imageUrl'];
-
-                            return InkWell(
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => PostDetailPage(
-                                      post: post,
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: pImageUrl == null ||
-                                      pImageUrl.toString().isEmpty
-                                  ? Container(
-                                      color: Colors.grey[200],
-                                      child: const Icon(
-                                        Icons.image_not_supported_outlined,
-                                        color: Colors.grey,
-                                      ),
-                                    )
-                                  : Image.network(
-                                      pImageUrl.toString(),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (ctx, e, st) => Container(
-                                        color: Colors.grey[200],
-                                        child: const Icon(
-                                          Icons.broken_image_outlined,
-                                          color: Colors.grey,
-                                        ),
-                                      ),
-                                    ),
-                            );
-                          },
-                        ),
-                    ],
-                  ),
-      ),
-    );
-  }
-}
-
-// ======================================================
-// NOTIFICATIONS PAGE  (Step 8 — Notifications)
-// ======================================================
-
-class NotificationsPage extends StatefulWidget {
-  const NotificationsPage({super.key});
-
-  @override
-  State<NotificationsPage> createState() => _NotificationsPageState();
-}
-
-class _NotificationsPageState extends State<NotificationsPage> {
-  List<dynamic> notifications = [];
-  bool isLoading = true;
-  String? errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    loadNotifications();
-  }
-
-  Future<String?> _getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('accessToken');
-  }
-
-  Future<void> loadNotifications() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      final response = await http.get(
-        Uri.parse('$apiBaseUrl/notifications'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          notifications = data is List ? data : [];
-          isLoading = false;
-        });
-      } else {
-        setState(() {
-          errorMessage = 'Failed to load notifications';
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        errorMessage = 'Connection error: $e';
-        isLoading = false;
-      });
-    }
-  }
-
-  Future<void> markAllAsRead() async {
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      final response = await http.patch(
-        Uri.parse('$apiBaseUrl/notifications/read-all'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        setState(() {
-          for (var item in notifications) {
-            item['isRead'] = true;
-          }
-        });
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('All notifications marked as read'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (_) {}
-  }
-
-  Future<void> markSingleAsRead(int id) async {
-    try {
-      final token = await _getToken();
-      if (token == null) return;
-
-      await http.patch(
-        Uri.parse('$apiBaseUrl/notifications/$id/read'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      setState(() {
-        final idx = notifications.indexWhere((n) => n['id'] == id);
-        if (idx != -1) {
-          notifications[idx]['isRead'] = true;
-        }
-      });
-    } catch (_) {}
-  }
-
-  IconData _getNotificationIcon(String? type) {
-    switch (type) {
-      case 'like':
-        return Icons.favorite;
-      case 'comment':
-        return Icons.chat_bubble_rounded;
-      case 'follow':
-        return Icons.person_add_rounded;
-      default:
-        return Icons.notifications;
-    }
-  }
-
-  Color _getNotificationColor(String? type) {
-    switch (type) {
-      case 'like':
-        return Colors.redAccent;
-      case 'comment':
-        return Colors.blue;
-      case 'follow':
-        return Colors.purple;
-      default:
-        return Colors.orange;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final unreadCount =
-        notifications.where((n) => n['isRead'] == false).length;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Notifications',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        actions: [
-          if (unreadCount > 0)
-            TextButton(
-              onPressed: markAllAsRead,
-              child: const Text('Mark all read'),
-            ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: loadNotifications,
-        child: isLoading
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : errorMessage != null
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.error_outline,
-                          size: 60,
-                          color: Colors.red,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(errorMessage!),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: loadNotifications,
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  )
-                : notifications.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.notifications_none_rounded,
-                              size: 80,
-                              color: Colors.grey[300],
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No notifications yet',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'When people follow you, like or comment on your posts,\nyou will see them here.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[500],
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: notifications.length,
-                        separatorBuilder: (context, index) => const Divider(
-                          height: 1,
-                          indent: 72,
-                        ),
-                        itemBuilder: (context, index) {
-                          final item = notifications[index];
-                          final isRead = item['isRead'] == true;
-                          final type = item['type']?.toString();
-                          final message = item['message'] ?? '';
-                          final createdAt = item['createdAt'];
-
-                          return InkWell(
-                            onTap: () {
-                              if (!isRead && item['id'] != null) {
-                                markSingleAsRead(item['id']);
-                              }
-                            },
-                            child: Container(
-                              color: isRead
-                                  ? Colors.transparent
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .primary
-                                      .withValues(alpha: 0.06),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  CircleAvatar(
-                                    radius: 22,
-                                    backgroundColor: _getNotificationColor(type)
-                                        .withValues(alpha: 0.15),
-                                    child: Icon(
-                                      _getNotificationIcon(type),
-                                      color: _getNotificationColor(type),
-                                      size: 20,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          message,
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: isRead
-                                                ? FontWeight.normal
-                                                : FontWeight.bold,
-                                            color: Colors.black87,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          formatTimeAgo(createdAt),
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey[500],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (!isRead)
-                                    Container(
-                                      width: 9,
-                                      height: 9,
-                                      margin: const EdgeInsets.only(
-                                        top: 6,
-                                        left: 8,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-      ),
-    );
-  }
-}
-
-// ======================================================
-// USER LIST PAGE (FOLLOWERS / FOLLOWING)
-// ======================================================
-
-class UserListPage extends StatefulWidget {
-  final int userId;
-  final String title;
-  final String endpoint; // 'followers' or 'following'
-
-  const UserListPage({
-    super.key,
-    required this.userId,
-    required this.title,
-    required this.endpoint,
-  });
-
-  @override
-  State<UserListPage> createState() => _UserListPageState();
-}
-
-class _UserListPageState extends State<UserListPage> {
-  List<dynamic> users = [];
-  bool isLoading = true;
-  String? errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    fetchUsers();
-  }
-
-  Future<void> fetchUsers() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = null;
-    });
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('accessToken');
-
-      final response = await http.get(
-        Uri.parse(
-          '$apiBaseUrl/users/${widget.userId}/${widget.endpoint}',
-        ),
-        headers: {
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (mounted) {
-          setState(() {
-            users = data is List ? data : [];
-            isLoading = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            errorMessage = 'Failed to load list: ${response.statusCode}';
-            isLoading = false;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          errorMessage = 'Connection error: $e';
-          isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: [
-          if (!isLoading && errorMessage == null)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${users.length}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: buildBody(),
-    );
-  }
-
-  Widget buildBody() {
-    if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
-    }
-
-    if (errorMessage != null) {
+  // ── Recent Searches (When search input is empty) ──
+  Widget _buildRecentHistory(bool isDark) {
+    if (history.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.error_outline,
-                size: 56,
-                color: Colors.redAccent,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                errorMessage!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: fetchUsers,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (users.isEmpty) {
-      return Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(32),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                Icons.people_outline,
-                size: 64,
-                color: Colors.grey.shade400,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                widget.endpoint == 'followers'
-                    ? 'No followers yet'
-                    : 'Not following anyone yet',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade600,
+              Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E1E1E) : const Color(0xFFF3F4F6),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.history_rounded,
+                  size: 46,
+                  color: isDark ? Colors.grey[600] : Colors.grey[400],
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 16),
+              const Text(
+                'No recent searches',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
               Text(
-                'When people connect, they will appear here.',
+                'Search for friends, creators, and community members to see them here!',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey.shade500,
+                  fontSize: 14,
+                  color: isDark ? Colors.grey[400] : Colors.grey[600],
                 ),
               ),
             ],
@@ -6022,100 +5203,146 @@ class _UserListPageState extends State<UserListPage> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: fetchUsers,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: users.length,
-        separatorBuilder: (context, index) => Divider(
-          height: 1,
-          indent: 72,
-          color: Colors.grey.shade200,
-        ),
-        itemBuilder: (context, index) {
-          final user = users[index];
-          final String name = user['name'] ?? '';
-          final String username = user['username'] ?? '';
-          final String displayName =
-              name.isNotEmpty ? name : (username.isNotEmpty ? username : 'User');
-          final String? profileImageUrl = user['profileImageUrl'];
-          final String? bio = user['bio'];
-          final String firstLetter = displayName.isNotEmpty
-              ? displayName.substring(0, 1).toUpperCase()
-              : 'U';
-
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 4,
-            ),
-            leading: CircleAvatar(
-              radius: 24,
-              backgroundImage: (profileImageUrl != null &&
-                      profileImageUrl.isNotEmpty)
-                  ? NetworkImage(profileImageUrl)
-                  : null,
-              child: (profileImageUrl == null || profileImageUrl.isEmpty)
-                  ? Text(
-                      firstLetter,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 18,
-                      ),
-                    )
-                  : null,
-            ),
-            title: Text(
-              displayName,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section Header with Clear All
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 4, 14, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Recent Searches',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.2,
+                ),
               ),
+              TextButton(
+                onPressed: _clearAllHistory,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF6366F1),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Clear all',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Recent items list
+        Expanded(
+          child: ListView.separated(
+            itemCount: history.length,
+            separatorBuilder: (_, _) => Divider(
+              height: 1,
+              indent: 68,
+              color: isDark ? const Color(0xFF262626) : const Color(0xFFF1F1F1),
             ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (username.isNotEmpty)
-                  Text(
+            itemBuilder: (context, index) {
+              final item = history[index];
+              final isUserType = item['type'] == 'user' && item['user'] is Map;
+
+              if (isUserType) {
+                final user = Map<String, dynamic>.from(item['user'] as Map);
+                final profileImageUrl = user['profileImageUrl']?.toString();
+                final username = (user['username'] ?? '').toString();
+                final name = (user['name'] ?? '').toString();
+                final initials = username.isNotEmpty
+                    ? username[0].toUpperCase()
+                    : name.isNotEmpty
+                        ? name[0].toUpperCase()
+                        : 'U';
+
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  onTap: () => _handleSelectHistoryItem(item),
+                  leading: CircleAvatar(
+                    radius: 20,
+                    backgroundColor: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                    backgroundImage: profileImageUrl != null && profileImageUrl.isNotEmpty
+                        ? NetworkImage(profileImageUrl)
+                        : null,
+                    child: profileImageUrl == null || profileImageUrl.isEmpty
+                        ? Text(
+                            initials,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: Color(0xFF6366F1),
+                            ),
+                          )
+                        : null,
+                  ),
+                  title: Text(
                     '@$username',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade600,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+                  ),
+                  subtitle: name.isNotEmpty
+                      ? Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: isDark ? Colors.grey[400] : Colors.grey[600],
+                          ),
+                        )
+                      : null,
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    color: Colors.grey,
+                    tooltip: 'Remove',
+                    onPressed: () => _removeHistoryItem(item['id']),
+                  ),
+                );
+              } else {
+                // Keyword history item
+                final query = item['query']?.toString() ?? '';
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  onTap: () => _handleSelectHistoryItem(item),
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF262626) : const Color(0xFFF3F4F6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.history_rounded,
+                      size: 20,
+                      color: Colors.grey,
                     ),
                   ),
-                if (bio != null && bio.trim().isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    bio.trim(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  title: Text(
+                    query,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5),
+                  ),
+                  subtitle: Text(
+                    'Search term',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.grey.shade700,
+                      color: isDark ? Colors.grey[500] : Colors.grey[600],
                     ),
                   ),
-                ],
-              ],
-            ),
-            trailing: const Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 14,
-              color: Colors.grey,
-            ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => UserProfilePage(
-                    userId: user['id'],
-                    userName: displayName,
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    color: Colors.grey,
+                    tooltip: 'Remove',
+                    onPressed: () => _removeHistoryItem(item['id']),
                   ),
-                ),
-              );
+                );
+              }
             },
-          );
-        },
-      ),
+          ),
+        ),
+      ],
     );
   }
 }
